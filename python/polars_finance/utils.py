@@ -4,8 +4,6 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 from polars.type_aliases import FrameType
-from datetime import timedelta
-from functools import reduce
 
 if TYPE_CHECKING:
     from polars.type_aliases import IntoExpr, PolarsDataType
@@ -38,6 +36,7 @@ def parse_into_expr(
     Returns
     -------
     polars.Expr
+
     """
     if isinstance(expr, pl.Expr):
         pass
@@ -69,6 +68,7 @@ def dynamic_shift(
     Returns
     -------
     FrameType
+
     """
     df_ind = df.with_row_index()
     if isinstance(df, pl.DataFrame):

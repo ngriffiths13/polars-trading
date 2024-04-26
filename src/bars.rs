@@ -151,9 +151,9 @@ impl Threshold {
 /// It takes in datetimes, prices, sizes, and thresholds as input.
 /// It returns a DataFrame containing the calculated bars.
 fn calculate_bars_from_trades(
-    datetimes: &[Option<i64>], // Datetimes of the trades
-    prices: &[Option<f64>], // Prices of the trades
-    sizes: &[Option<u32>], // Sizes of the trades
+    datetimes: &[Option<i64>],       // Datetimes of the trades
+    prices: &[Option<f64>],          // Prices of the trades
+    sizes: &[Option<u32>],           // Sizes of the trades
     threshold: &[Option<Threshold>], // Threshold for calculating the bars
 ) -> PolarsResult<DataFrame> {
     // TODO: Add dollar volume to OHLCV
@@ -176,8 +176,8 @@ fn calculate_bars_from_trades(
         .zip(sizes.iter())
         .zip(threshold.iter())
     {
-        match (dt, price, size, thresh) {
-            (Some(dt), Some(price), Some(mut size), Some(thresh)) => match thresh {
+        if let (Some(dt), Some(price), Some(mut size), Some(thresh)) = (dt, price, size, thresh) {
+            match thresh {
                 Threshold::Volume(thresh) => {
                     if size >= thresh - bar_transactions.get_current_volume() {
                         let mut remaining_size = thresh - bar_transactions.get_current_volume();
@@ -206,8 +206,7 @@ fn calculate_bars_from_trades(
                     }
                 }
                 Threshold::Dollar(thresh) => {
-                    if price * size as f64
-                        >= *thresh - bar_transactions.get_current_dollar_volume() as f64
+                    if price * size as f64 >= *thresh - bar_transactions.get_current_dollar_volume()
                     {
                         let mut remaining = *thresh - bar_transactions.get_current_dollar_volume();
                         while price * size as f64 >= remaining {
@@ -238,8 +237,7 @@ fn calculate_bars_from_trades(
                         bar_transactions.add_transaction(*price, size, *dt);
                     }
                 }
-            },
-            _ => {}
+            }
         }
         // create an array of len bars and fill with symbol
     }
@@ -294,6 +292,7 @@ fn ohlcv_struct_type(_input_fields: &[Field]) -> PolarsResult<Field> {
 /// Function to calculate volume bars.
 /// It takes in a list of Series as input.
 /// It returns a Series containing the calculated volume bars.
+/// This function aggregates trade level data and calculates the OHLCV bar for each n shares traded.
 #[polars_expr(output_type_func=ohlcv_struct_type)] // FIXME
 pub fn volume_bars(inputs: &[Series]) -> PolarsResult<Series> {
     let dts = inputs[0].datetime()?; // Datetimes of the trades
@@ -318,7 +317,7 @@ pub fn volume_bars(inputs: &[Series]) -> PolarsResult<Series> {
         .lazy()
         .with_columns(vec![
             col("start_dt").cast(dt_type.clone()), // Cast the start datetimes to the original type
-            col("end_dt").cast(dt_type.clone()), // Cast the end datetimes to the original type
+            col("end_dt").cast(dt_type.clone()),   // Cast the end datetimes to the original type
         ])
         .select([as_struct(vec![
             col("start_dt"),
@@ -337,7 +336,6 @@ pub fn volume_bars(inputs: &[Series]) -> PolarsResult<Series> {
         .clone(); // Select the OHLCV struct and cast it to the original type
     Ok(s) // Return the calculated bars
 }
-
 
 /// Function to calculate dollar bars.
 /// It takes in a list of Series as input.
@@ -364,7 +362,7 @@ pub fn dollar_bars(inputs: &[Series]) -> PolarsResult<Series> {
         .lazy()
         .with_columns(vec![
             col("start_dt").cast(dt_type.clone()), // Cast the start datetimes to the original type
-            col("end_dt").cast(dt_type.clone()), // Cast the end datetimes to the original type
+            col("end_dt").cast(dt_type.clone()),   // Cast the end datetimes to the original type
         ])
         .select([as_struct(vec![
             col("start_dt"),

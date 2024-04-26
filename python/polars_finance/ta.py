@@ -1,6 +1,7 @@
 import polars as pl
-from polars_finance.utils import parse_into_expr
 from polars.type_aliases import IntoExpr
+
+from polars_finance.utils import parse_into_expr
 
 
 def balance_of_power(

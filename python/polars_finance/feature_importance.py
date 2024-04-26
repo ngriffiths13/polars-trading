@@ -1,7 +1,3 @@
-import polars as pl
-from polars.type_aliases import IntoExpr
-
-
 def mdi_feature_importance(): ...
 
 

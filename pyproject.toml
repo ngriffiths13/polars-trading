@@ -1,66 +1,84 @@
-[build-system]
-requires = ["maturin>=1.1,<2.0", "polars>=0.20.6"]
-build-backend = "maturin"
-
 [project]
 name = "polars-finance"
-requires-python = ">=3.8"
-classifiers = [
-  "Programming Language :: Rust",
-  "Programming Language :: Python :: Implementation :: CPython",
-  "Programming Language :: Python :: Implementation :: PyPy",
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "Nelson Griffiths", email = "nelsongriffiths@doubleriver.com" },
 ]
-version="0.1.0"
-
 dependencies = [
-    "polars>=0.20.13",
+    "polars[plot,pyarrow]>=0.20.22",
+    "great-tables>=0.5.0",
 ]
-license = { file = "LICENSE" }
 readme = "README.md"
+requires-python = ">= 3.8"
+
+[build-system]
+requires = ["maturin>=1.2,<2.0"]
+build-backend = "maturin"
+
+[tool.rye]
+managed = true
+dev-dependencies = [
+    "pytest>=8.1.1",
+    "pytest-benchmark>=4.0.0",
+    "ruff>=0.4.1",
+    "marimo>=0.4.3",
+    "databento>=0.33.0",
+]
 
 [tool.maturin]
+python-source = "python"
+module-name = "polars_finance._lowlevel"
 features = ["pyo3/extension-module"]
 
 [tool.ruff.format]
 docstring-code-format = true
 
 [tool.ruff]
-lint.select = [
-  "ALL",
-]
+lint.select = ["ALL"]
 lint.ignore = [
-  'A003',
-  'ANN101',
-  'ANN401',
-  'ARG002',  # todo: enable
-  'ARG003',  # todo: enable
-  'C901',
-  'COM812',
-  'D100',
-  'D103',
-  'D104',
-  'D105',
-  'D107',
-  'D203',
-  'D212',
-  'DTZ',
-  'E501',
-  'FBT003',  # todo: enable
-  'FIX',
-  'ISC001',
-  'PD',
-  'PLR0911',
-  'PLR0912',
-  'PLR5501',
-  'PLR2004',
-  'PT011',
-  'PTH',
-  'RET505',
-  'S',
-  'SLF001',
-  'TD',
-  'TRY004'
+    'A003',
+    'ANN101',
+    'ANN401',
+    'C901',
+    'COM812',
+    'D100',
+    'D103',
+    'D104',
+    'D105',
+    'D107',
+    'D203',
+    'D212',
+    'DTZ',
+    'E501',
+    'FIX',
+    'ISC001',
+    'PD',
+    'PLR0911',
+    'PLR0912',
+    'PLR0913',
+    'PLR5501',
+    'PLR2004',
+    'PT011',
+    'PTH',
+    'RET505',
+    'S',
+    'SLF001',
+    'TD',
+    'TRY004',
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
 lint.fixable = ["ALL"]
+
+[tool.pytest.ini_options]
+testpaths = 'tests'
+
+addopts = [
+    '--benchmark-columns',
+    'min,mean,stddev,outliers,rounds,iterations',
+    '--benchmark-group-by',
+    'group',
+    '--benchmark-warmup',
+    'on',
+]
