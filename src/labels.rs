@@ -12,11 +12,13 @@ struct TripleBarrierLabelKwargs {
     min_return: f64,
 }
 
+#[derive(Debug)]
 struct HorizontalBarrier {
     lower: Option<f64>,
     upper: Option<f64>,
 }
 
+#[derive(Clone, Copy)]
 struct Label {
     event: Option<i8>,
     ret: f64,
@@ -73,26 +75,26 @@ fn get_event(
             Label {
                 event: Some(-1),
                 ret: *path_prices.last().unwrap_or(&0.0),
-                n_bars: path_prices.len() as i64,
+                n_bars: (path_prices.len() - 1) as i64,
             }
         } else if *path_prices.last().unwrap_or(&0.0) > min_return {
             Label {
                 event: Some(1),
                 ret: *path_prices.last().unwrap_or(&0.0),
-                n_bars: path_prices.len() as i64,
+                n_bars: (path_prices.len() - 1) as i64,
             }
         } else {
             Label {
                 event: None,
                 ret: *path_prices.last().unwrap_or(&0.0),
-                n_bars: path_prices.len() as i64,
+                n_bars: (path_prices.len() - 1) as i64,
             }
         }
     } else {
         Label {
             event: Some(0),
             ret: *path_prices.last().unwrap_or(&0.0),
-            n_bars: path_prices.len() as i64,
+            n_bars: (path_prices.len() - 1) as i64,
         }
     }
 }
@@ -145,24 +147,14 @@ fn compute_triple_barrier_labels(
     seed_indicator: &[bool],
     use_vertical_barrier_sign: bool,
     min_return: f64,
-) -> (Series, Series, Series) {
-    let mut event_builder: PrimitiveChunkedBuilder<Int8Type> =
-        PrimitiveChunkedBuilder::new("triple_barrier_label_event", prices.len());
-    let mut ret_builder: PrimitiveChunkedBuilder<Float64Type> =
-        PrimitiveChunkedBuilder::new("triple_barrier_label_ret", prices.len());
-    let mut n_bar_builder: PrimitiveChunkedBuilder<Int64Type> =
-        PrimitiveChunkedBuilder::new("triple_barrier_label_n_bars", prices.len());
+) -> Vec<Option<Label>> {
+    let mut labels: Vec<Option<Label>> = Vec::with_capacity(prices.len());
     for i in 0..prices.len() {
         if !seed_indicator[i] {
-            event_builder.append_null();
-            ret_builder.append_null();
-            n_bar_builder.append_null();
+            labels.push(None);
         } else {
             let path_prices = get_path_prices(
-                &prices[i..std::cmp::min(
-                    i + vertical_barriers[i] as usize,
-                    prices.len() as usize,
-                )],
+                &prices[i..std::cmp::min(i + vertical_barriers[i] as usize, prices.len())],
             );
             let label = get_event(
                 &path_prices,
@@ -171,37 +163,48 @@ fn compute_triple_barrier_labels(
                 use_vertical_barrier_sign,
                 min_return,
             );
-            match label {
-                Label {
-                    event: Some(e),
-                    ret: _,
-                    n_bars: _,
-                } => {
-                    event_builder.append_value(e);
-                    ret_builder.append_value(label.ret);
-                    n_bar_builder.append_value(label.n_bars);
-                }
+            labels.push(Some(label));
+        }
+    }
+    labels
+}
 
-                Label {
-                    event: None,
-                    ret: _,
-                    n_bars: _,
-                } => {
-                    event_builder.append_null();
-                    ret_builder.append_null();
-                    n_bar_builder.append_null();
+fn labels_to_df(labels: Vec<Option<Label>>) -> DataFrame {
+    let mut event_builder: PrimitiveChunkedBuilder<Int8Type> =
+        PrimitiveChunkedBuilder::new("triple_barrier_label_event", labels.len());
+    let mut ret_builder: PrimitiveChunkedBuilder<Float64Type> =
+        PrimitiveChunkedBuilder::new("triple_barrier_label_ret", labels.len());
+    let mut n_bar_builder: PrimitiveChunkedBuilder<Int64Type> =
+        PrimitiveChunkedBuilder::new("triple_barrier_label_n_bars", labels.len());
+
+    for label in labels.into_iter() {
+        match label {
+            None => {
+                event_builder.append_null();
+                ret_builder.append_null();
+                n_bar_builder.append_null();
+            }
+            Some(label) => {
+                match label.event {
+                    None => {
+                        event_builder.append_null();
+                    }
+                    Some(e) => {
+                        event_builder.append_value(e);
+                    }
                 }
+                ret_builder.append_value(label.ret);
+                n_bar_builder.append_value(label.n_bars);
             }
         }
     }
-    (
-        event_builder.finish().into(),
-        ret_builder.finish().into(),
-        n_bar_builder.finish().into(),
+    df!(
+        "triple_barrier_label_event" => event_builder.finish(),
+        "triple_barrier_label_ret" => ret_builder.finish(),
+        "triple_barrier_label_n_bars" => n_bar_builder.finish()
     )
-
+    .unwrap()
 }
-
 #[polars_expr(output_type_func=tbl_struct_type)]
 pub fn triple_barrier_label(
     inputs: &[Series],
@@ -209,7 +212,7 @@ pub fn triple_barrier_label(
 ) -> PolarsResult<Series> {
     let prices = inputs[0].f64()?.to_vec();
     let horizontal_widths = inputs[1].f64()?;
-    let vertical_barriers = inputs[2].i64()?;
+    let vertical_barriers = inputs[2].i64()?.to_vec();
     let seed_indicator = inputs[3].bool()?;
     let stop_loss = kwargs.stop_loss;
     let profit_taker = kwargs.profit_taker;
@@ -219,74 +222,33 @@ pub fn triple_barrier_label(
             "Missing prices in the input".to_string(),
         )));
     }
+    let seed_indicator: Vec<bool> = seed_indicator.iter().map(|x| x.unwrap_or(false)).collect();
     let prices: Vec<f64> = prices.iter().map(|&x| x.unwrap()).collect();
+    let vertical_barriers: Vec<i64> = vertical_barriers.iter().map(|&x| x.unwrap_or(0)).collect();
     let horizontal_barriers =
         get_horizontal_barriers(&horizontal_widths.to_vec(), stop_loss, profit_taker);
 
-    let mut event_builder: PrimitiveChunkedBuilder<Int8Type> =
-        PrimitiveChunkedBuilder::new("triple_barrier_label_event", prices.len());
-    let mut ret_builder: PrimitiveChunkedBuilder<Float64Type> =
-        PrimitiveChunkedBuilder::new("triple_barrier_label_ret", prices.len());
-    let mut n_bar_builder: PrimitiveChunkedBuilder<Int64Type> =
-        PrimitiveChunkedBuilder::new("triple_barrier_label_n_bars", prices.len());
-    for i in 0..prices.len() {
-        if !seed_indicator.get(i).unwrap_or(false) {
-            event_builder.append_null();
-            ret_builder.append_null();
-            n_bar_builder.append_null();
-        } else {
-            let path_prices = get_path_prices(
-                &prices[i..std::cmp::min(
-                    i + vertical_barriers.get(i).unwrap_or(0) as usize,
-                    prices.len() as usize,
-                )],
-            );
-            let label = get_event(
-                &path_prices,
-                horizontal_barriers[i].lower,
-                horizontal_barriers[i].upper,
-                kwargs.use_vertical_barrier_sign,
-                kwargs.min_return,
-            );
-            // TODO: Add n_bars to the output
-            match label {
-                Label {
-                    event: Some(e),
-                    ret: _,
-                    n_bars: _,
-                } => {
-                    event_builder.append_value(e);
-                    ret_builder.append_value(label.ret);
-                    n_bar_builder.append_value(label.n_bars);
-                }
+    let labels = compute_triple_barrier_labels(
+        &prices,
+        &horizontal_barriers,
+        &vertical_barriers,
+        &seed_indicator,
+        kwargs.use_vertical_barrier_sign,
+        kwargs.min_return,
+    );
 
-                Label {
-                    event: None,
-                    ret: _,
-                    n_bars: _,
-                } => {
-                    event_builder.append_null();
-                    ret_builder.append_null();
-                    n_bar_builder.append_null();
-                }
-            }
-        }
-    }
-    let s = df!(
-        "triple_barrier_label_event" => event_builder.finish(),
-        "triple_barrier_label_ret" => ret_builder.finish(),
-        "triple_barrier_label_n_bars" => n_bar_builder.finish()
-    )?
-    .lazy()
-    .select([as_struct(vec![
-        col("triple_barrier_label_event"),
-        col("triple_barrier_label_ret"),
-        col("triple_barrier_label_n_bars"),
-    ])
-    .alias("triple_barrier_label")])
-    .collect()?
-    .column("triple_barrier_label")?
-    .clone();
+    let df = labels_to_df(labels);
+    let s = df
+        .lazy()
+        .select([as_struct(vec![
+            col("triple_barrier_label_event"),
+            col("triple_barrier_label_ret"),
+            col("triple_barrier_label_n_bars"),
+        ])
+        .alias("triple_barrier_label")])
+        .collect()?
+        .column("triple_barrier_label")?
+        .clone();
     Ok(s)
 }
 
@@ -296,11 +258,11 @@ mod tests {
 
     #[test]
     fn test_get_event() {
-        let path_prices = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let stop_loss = Some(1.0);
-        let profit_taker = Some(3.0);
+        let path_prices = vec![0.0, 0.1, 0.0, 0.2, 0.0];
+        let stop_loss = Some(0.11);
+        let profit_taker = Some(0.11);
         let use_vertical_barrier_sign = true;
-        let min_return = 1.0;
+        let min_return = 0.0;
 
         let label = get_event(
             &path_prices,
@@ -310,8 +272,8 @@ mod tests {
             min_return,
         );
         assert_eq!(label.event, Some(1));
-        assert_eq!(label.ret, 3.0);
-        assert_eq!(label.n_bars, 2);
+        assert_eq!(label.ret, 0.2);
+        assert_eq!(label.n_bars, 3);
     }
 
     #[test]
@@ -332,33 +294,48 @@ mod tests {
 
     #[test]
     fn test_get_path_prices() {
-        let prices = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let prices = vec![10.0, 11.0, 10.0, 12.0, 10.0];
 
         let path_prices = get_path_prices(&prices);
         assert_eq!(path_prices.len(), 5);
         assert_eq!(path_prices[0], 0.0);
-        assert_eq!(path_prices[1], 1.0);
-        assert_eq!(path_prices[2], 2.0);
-        assert_eq!(path_prices[3], 3.0);
-        assert_eq!(path_prices[4], 4.0);
+        assert!(path_prices[1] - 0.1 < 0.0001);
+        assert_eq!(path_prices[2], 0.0);
+        assert!(path_prices[3] - 0.2 < 0.0001);
+        assert_eq!(path_prices[4], 0.0);
     }
 
     #[test]
     fn test_compute_triple_barrier_labels() {
-        let prices = vec![1.0, 2.0, 1.0, 4.0, 2.0];
+        let prices = vec![10.0, 11.0, 10.0, 12.0, 10.0];
         let horizontal_barriers = vec![
-            HorizontalBarrier { lower: Some(1.0), upper: Some(1.0) },
-            HorizontalBarrier { lower: Some(1.0), upper: Some(1.0) },
-            HorizontalBarrier { lower: Some(1.0), upper: Some(1.0) },
-            HorizontalBarrier { lower: Some(1.0), upper: Some(1.0) },
-            HorizontalBarrier { lower: Some(1.0), upper: Some(1.0) },
-            ];
-        let vertical_barriers = vec![2, 2, 2, 1, 1];
+            HorizontalBarrier {
+                lower: Some(0.11),
+                upper: Some(0.11),
+            },
+            HorizontalBarrier {
+                lower: Some(0.11),
+                upper: Some(0.11),
+            },
+            HorizontalBarrier {
+                lower: Some(0.11),
+                upper: Some(0.11),
+            },
+            HorizontalBarrier {
+                lower: Some(0.11),
+                upper: Some(0.11),
+            },
+            HorizontalBarrier {
+                lower: Some(0.11),
+                upper: Some(0.11),
+            },
+        ];
+        let vertical_barriers = vec![5, 5, 5, 5, 5];
         let seed_indicator = vec![true, true, true, true, true];
         let use_vertical_barrier_sign = true;
-        let min_return = 0.1;
+        let min_return = 0.0;
 
-        let (event, ret, n_bars) = compute_triple_barrier_labels(
+        let labels = compute_triple_barrier_labels(
             &prices,
             &horizontal_barriers,
             &vertical_barriers,
@@ -367,9 +344,84 @@ mod tests {
             min_return,
         );
 
-        assert_eq!(event.len(), prices.len());
-        assert_eq!(ret.len(), prices.len());
-        assert_eq!(n_bars.len(), prices.len());
-        
+        assert_eq!(labels.get(0).unwrap().unwrap().event, Some(1));
+        assert!(labels.get(0).unwrap().unwrap().ret - 0.2 < 0.0001);
+        assert_eq!(labels.get(0).unwrap().unwrap().n_bars, 3);
+
+        assert_eq!(labels.get(1).unwrap().unwrap().event, Some(-1));
+        assert!(labels.get(1).unwrap().unwrap().ret + 0.090909 < 0.0001);
+        assert_eq!(labels.get(1).unwrap().unwrap().n_bars, 3);
+
+        assert_eq!(labels.get(2).unwrap().unwrap().event, Some(1));
+        assert!(labels.get(2).unwrap().unwrap().ret - 0.2 < 0.0001);
+        assert_eq!(labels.get(2).unwrap().unwrap().n_bars, 1);
+
+        assert_eq!(labels.get(3).unwrap().unwrap().event, Some(-1));
+        assert!(labels.get(3).unwrap().unwrap().ret + 0.16666 < 0.0001);
+        assert_eq!(labels.get(3).unwrap().unwrap().n_bars, 1);
+
+        assert_eq!(labels.get(4).unwrap().unwrap().event, None);
+        assert!(labels.get(4).unwrap().unwrap().ret - 0.0 < 0.0001);
+        assert_eq!(labels.get(4).unwrap().unwrap().n_bars, 0);
+    }
+
+    #[test]
+    fn test_compute_triple_barrier_labels_no_vertical_barrier_sign() {
+        let prices = vec![10.0, 11.0, 10.0, 12.0, 10.0];
+        let horizontal_barriers = vec![
+            HorizontalBarrier {
+                lower: Some(0.11),
+                upper: Some(0.11),
+            },
+            HorizontalBarrier {
+                lower: Some(0.11),
+                upper: Some(0.11),
+            },
+            HorizontalBarrier {
+                lower: Some(0.11),
+                upper: Some(0.11),
+            },
+            HorizontalBarrier {
+                lower: Some(0.11),
+                upper: Some(0.11),
+            },
+            HorizontalBarrier {
+                lower: Some(0.11),
+                upper: Some(0.11),
+            },
+        ];
+        let vertical_barriers = vec![5, 5, 5, 5, 5];
+        let seed_indicator = vec![true, true, true, true, true];
+        let use_vertical_barrier_sign = false;
+        let min_return = 0.0;
+
+        let labels = compute_triple_barrier_labels(
+            &prices,
+            &horizontal_barriers,
+            &vertical_barriers,
+            &seed_indicator,
+            use_vertical_barrier_sign,
+            min_return,
+        );
+
+        assert_eq!(labels.get(0).unwrap().unwrap().event, Some(1));
+        assert!(labels.get(0).unwrap().unwrap().ret - 0.2 < 0.0001);
+        assert_eq!(labels.get(0).unwrap().unwrap().n_bars, 3);
+
+        assert_eq!(labels.get(1).unwrap().unwrap().event, Some(0));
+        assert!(labels.get(1).unwrap().unwrap().ret + 0.090909 < 0.0001);
+        assert_eq!(labels.get(1).unwrap().unwrap().n_bars, 3);
+
+        assert_eq!(labels.get(2).unwrap().unwrap().event, Some(1));
+        assert!(labels.get(2).unwrap().unwrap().ret - 0.2 < 0.0001);
+        assert_eq!(labels.get(2).unwrap().unwrap().n_bars, 1);
+
+        assert_eq!(labels.get(3).unwrap().unwrap().event, Some(-1));
+        assert!(labels.get(3).unwrap().unwrap().ret + 0.16666 < 0.0001);
+        assert_eq!(labels.get(3).unwrap().unwrap().n_bars, 1);
+
+        assert_eq!(labels.get(4).unwrap().unwrap().event, Some(0));
+        assert!(labels.get(4).unwrap().unwrap().ret - 0.0 < 0.0001);
+        assert_eq!(labels.get(4).unwrap().unwrap().n_bars, 0);
     }
 }

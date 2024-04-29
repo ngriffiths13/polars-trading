@@ -5,15 +5,13 @@ from typing import TYPE_CHECKING
 import polars as pl
 from polars.plugins import register_plugin_function
 from polars.utils.udfs import _get_shared_lib_location
-lib = _get_shared_lib_location(__file__)
-print(lib)
 
-from polars_finance.utils import parse_into_expr
+lib = _get_shared_lib_location(__file__)
+
 from pathlib import Path
 
 if TYPE_CHECKING:
-    from polars.type_aliases import FrameType, IntoExpr
-
+    from polars.type_aliases import FrameType
 
 
 # def _dynamic_tick_bar_groups(thresholds: IntoExpr) -> pl.Expr:
@@ -134,7 +132,7 @@ def tick_bars(
     #         _dynamic_tick_bar_groups(bar_size)
     #         .over(symbol_col, "__date")
     #         .alias("__tick_group")
-        # )
+    # )
     return (
         ohlcv.group_by("__tick_group", symbol_col, "__date")
         .agg(_ohlcv_expr(timestamp_col, price_col, size_col))
@@ -190,7 +188,12 @@ def volume_bars(
                 function_name="volume_bars",
                 is_elementwise=False,
                 cast_to_supertype=False,
-                args=[pl.col(timestamp_col), pl.col(price_col), pl.col(size_col), pl.col("__PFIN_bar_size")],
+                args=[
+                    pl.col(timestamp_col),
+                    pl.col(price_col),
+                    pl.col(size_col),
+                    pl.col("__PFIN_bar_size"),
+                ],
                 changes_length=True,
             )
         )

@@ -37,7 +37,7 @@ struct Transaction {
 }
 
 /// Struct representing OHLCV data.
-struct OHLCV {
+struct Ohlcv {
     start_dt: i64,
     end_dt: i64,
     open: f64,
@@ -91,7 +91,7 @@ impl BarTransactions {
     }
 
     /// Calculate the OHLCV data from the transactions.
-    fn calculate_ohlcv(&self) -> OHLCV {
+    fn calculate_ohlcv(&self) -> Ohlcv {
         let start_dt = self.transactions.first().unwrap().dt;
         let end_dt = self.transactions.last().unwrap().dt;
         let open = self.transactions.first().unwrap().price;
@@ -114,7 +114,7 @@ impl BarTransactions {
             .sum::<f64>()
             / volume as f64;
         let n_transactions = self.transactions.len().try_into().unwrap();
-        OHLCV {
+        Ohlcv {
             start_dt,
             end_dt,
             open,
@@ -157,7 +157,7 @@ fn calculate_bars_from_trades(
     threshold: &[Option<Threshold>], // Threshold for calculating the bars
 ) -> PolarsResult<DataFrame> {
     // TODO: Add dollar volume to OHLCV
-    let mut bars: Vec<OHLCV> = Vec::new(); // Vector to store the calculated bars
+    let mut bars: Vec<Ohlcv> = Vec::new(); // Vector to store the calculated bars
     let mut start_dt: Vec<i64> = Vec::new(); // Vector to store the start datetimes of the bars
     let mut end_dt: Vec<i64> = Vec::new(); // Vector to store the end datetimes of the bars
     let mut opens: Vec<f64> = Vec::new(); // Vector to store the opening prices of the bars

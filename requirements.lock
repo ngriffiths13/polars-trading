@@ -34,6 +34,7 @@ htmltools==0.5.1
     # via great-tables
 hvplot==0.9.2
     # via polars
+    # via polars-finance
 idna==3.7
     # via requests
 importlib-metadata==7.1.0
@@ -62,7 +63,7 @@ numpy==1.26.4
     # via holoviews
     # via hvplot
     # via pandas
-    # via pyarrow
+    # via scipy
 packaging==24.0
     # via bokeh
     # via holoviews
@@ -85,8 +86,6 @@ pillow==10.3.0
     # via bokeh
 polars==0.20.22
     # via polars-finance
-pyarrow==16.0.0
-    # via polars
 python-dateutil==2.9.0.post0
     # via pandas
 pytz==2024.1
@@ -98,6 +97,8 @@ pyyaml==6.0.1
     # via bokeh
 requests==2.31.0
     # via panel
+scipy==1.13.0
+    # via polars-finance
 six==1.16.0
     # via bleach
     # via python-dateutil

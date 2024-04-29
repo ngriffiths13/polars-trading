@@ -6,8 +6,10 @@ authors = [
     { name = "Nelson Griffiths", email = "nelsongriffiths@doubleriver.com" },
 ]
 dependencies = [
-    "polars[plot,pyarrow]>=0.20.22",
+    "polars[plot]>=0.20.22",
     "great-tables>=0.5.0",
+    "hvplot>=0.9.2",
+    "scipy>=1.13.0",
 ]
 readme = "README.md"
 requires-python = ">= 3.8"
@@ -22,8 +24,12 @@ dev-dependencies = [
     "pytest>=8.1.1",
     "pytest-benchmark>=4.0.0",
     "ruff>=0.4.1",
-    "marimo>=0.4.3",
+    "marimo>=0.4.7",
     "databento>=0.33.0",
+    "pytest-cov>=5.0.0",
+    "pytest-memray>=1.6.0",
+    "pytest-codspeed>=2.2.1",
+    "nox>=2024.4.15",
 ]
 
 [tool.maturin]
@@ -75,6 +81,9 @@ lint.fixable = ["ALL"]
 testpaths = 'tests'
 
 addopts = [
+    '--cov-report=term-missing',
+    '--cov=polars_finance',
+    '--benchmark-disable',
     '--benchmark-columns',
     'min,mean,stddev,outliers,rounds,iterations',
     '--benchmark-group-by',
