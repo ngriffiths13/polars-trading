@@ -1,1 +1,1 @@
-# Polars Finance
+# Polars Trading
