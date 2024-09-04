@@ -6,8 +6,9 @@ venv
 *.so
 *.dll
 *.pyd
-.benchmarks/
 .hypothesis/
 .pytest_cache/
 .ruff_cache/
 __pycache__/
+data/
+.DS_Store

@@ -80,6 +80,7 @@ ignore_missing_imports = true
 dev-dependencies = [
     "build>=1.2.1",
     "hypothesis>=6.111.2",
+    "marimo>=0.8.8",
     "maturin>=1.7.1",
     "mimesis>=12.1.0",
     "pandas>=2.2.2",
