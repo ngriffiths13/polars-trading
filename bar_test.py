@@ -7,36 +7,47 @@ app = marimo.App(width="medium")
 @app.cell
 def __():
     import polars as pl
-    return pl,
+    from polars_trading._testing.data import generate_trade_data
+    from copy import deepcopy
+    return deepcopy, generate_trade_data, pl
 
 
 @app.cell
-def __(pl):
-    data = pl.read_parquet("./trade_data.parquet")
-    pl_df = pl.read_parquet("./res.parquet")
-    pd_df = pl.read_parquet("./pd_df.parquet")
-    return data, pd_df, pl_df
+def __(generate_trade_data):
+    df = generate_trade_data(100_000)
+    return df,
 
 
 @app.cell
-def __(pl_df):
-    pl_df
+def __(df, pl):
+    bar_size = 1_000_000
+    rows = list(df.sort("ts_event").filter(pl.col("symbol") == "AAPL").iter_rows(named=True))
+    return bar_size, rows
+
+
+@app.cell
+def __(bar_size, deepcopy, rows):
+    aggs = []
+    row_group = []
+    curr_vol = 0
+    for row in rows:
+        if curr_vol + row["size"] >= bar_size:
+            tmp_row = deepcopy(row)
+            tmp_row["size"] = bar_size - curr_vol
+            row["size"] -= tmp_row["size"]
+            row_group.append(tmp_row)
+            aggs.append(row_group)
+            row_group = []
+            curr_vol = 0
+        curr_vol += row["size"]
+        row_group.append(row)
+    return aggs, curr_vol, row, row_group, tmp_row
+
+
+@app.cell
+def __(aggs, pl):
+    pl.DataFrame(aggs[0])
     return
-
-
-@app.cell
-def __(pd_df, pl, pl_df):
-    pd_df.select("ts_event_start").hstack(
-        pl_df.select(pl.col("ts_event_start").alias("pl"))
-    ).with_columns((pl.col("ts_event_start") == pl.col("pl")).alias("eq")).filter(~pl.col("eq"))
-    return
-
-
-@app.cell
-def __(data, pl):
-    import datetime
-    data.filter(pl.col("ts_event").dt.truncate("1m") == datetime.datetime(2024, 12, 16, 10, 50))
-    return datetime,
 
 
 if __name__ == "__main__":

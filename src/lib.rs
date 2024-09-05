@@ -1,4 +1,4 @@
-mod expressions;
+mod bars;
 use pyo3::types::{PyModule, PyModuleMethods};
 use pyo3::{pymodule, Bound, PyResult};
 use pyo3_polars::PolarsAllocator;
@@ -11,4 +11,3 @@ fn _internal(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[global_allocator]
 static ALLOC: PolarsAllocator = PolarsAllocator::new();
-
