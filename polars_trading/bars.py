@@ -264,27 +264,31 @@ def dollar_bars(
             pl.col(price_col).mul(pl.col(size_col)).alias("__dollar_volume"),
         )
     )
-    ohlcv = ohlcv.with_columns(
-        _bar_groups_expr("__dollar_volume", bar_size)
-        .over("__date", symbol_col)
-        .alias("__bar_groups")
-    ).unnest("__bar_groups")
+    ohlcv = (
+        ohlcv.with_columns(
+            _bar_groups_expr("__dollar_volume", bar_size)
+            .over("__date", symbol_col)
+            .alias("__bar_groups")
+        )
+        .unnest("__bar_groups")
+        .with_columns(
+            pl.col("bar_group__amount")
+            .truediv(pl.col(price_col))
+            .alias("bar_group__amount"),
+        )
+    )
 
-    # TODO
     return (
         ohlcv.vstack(
-            ohlcv.filter(
-                pl.col("__dollar_volume") != pl.col("bar_group__amount")
-            ).with_columns(
-                pl.col("__dollar_volume")
-                .truediv()
+            ohlcv.filter(pl.col(size_col) != pl.col("bar_group__amount")).with_columns(
+                pl.col(size_col)
                 .sub(pl.col("bar_group__amount"))
                 .alias("bar_group__amount"),
                 pl.col("bar_group__id") + 1,
             )
         )
         .select(
-            pl.all().exclude(size_col, "bar_group__amount", "__dollar_volume"),
+            pl.all().exclude(size_col, "bar_group__amount"),
             pl.col("bar_group__amount").alias(size_col),
         )
         .group_by("__date", symbol_col, "bar_group__id")

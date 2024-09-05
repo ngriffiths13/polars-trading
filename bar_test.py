@@ -8,9 +8,9 @@ app = marimo.App(width="medium")
 def __():
     import polars as pl
     from polars_trading._testing.data import generate_trade_data
-    from polars_trading.bars import _bar_groups_expr, _ohlcv_expr, volume_bars
+    from polars_trading.bars import _bar_groups_expr, _ohlcv_expr, volume_bars, dollar_bars
     from copy import deepcopy
-    return deepcopy, generate_trade_data, pl, volume_bars
+    return deepcopy, dollar_bars, generate_trade_data, pl, volume_bars
 
 
 @app.cell
@@ -20,8 +20,8 @@ def __(generate_trade_data):
 
 
 @app.cell
-def __(df, volume_bars):
-    volume_bars(df, timestamp_col="ts_event", bar_size=1_000_000)
+def __(df, dollar_bars, pl):
+    dollar_bars(df, timestamp_col="ts_event", bar_size=100_000).with_columns((pl.col("vwap") * pl.col("volume")).alias("dollar_vol"))
     return
 
 
