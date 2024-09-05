@@ -187,7 +187,7 @@ def volume_bars(
         price_col (str): The name of the price column in the DataFrame.
         size_col (str): The name of the size column in the DataFrame.
         symbol_col (str): The name of the symbol column in the DataFrame.
-        bar_size (int): The number of ticks to aggregate into a single bar.
+        bar_size (int): The volume to aggregate into a single bar.
 
     Returns:
     -------
@@ -216,6 +216,75 @@ def volume_bars(
         )
         .select(
             pl.all().exclude(size_col, "bar_group__amount"),
+            pl.col("bar_group__amount").alias(size_col),
+        )
+        .group_by("__date", symbol_col, "bar_group__id")
+        .agg(_ohlcv_expr(timestamp_col, price_col, size_col))
+        .drop("__date", "bar_group__id")
+        .sort(f"{timestamp_col}_end")
+    )
+
+
+@validate_columns("timestamp_col", "price_col", "size_col", "symbol_col")
+def dollar_bars(
+    df: FrameType,
+    *,
+    timestamp_col: str,
+    price_col: str = "price",
+    size_col: str = "size",
+    symbol_col: str = "symbol",
+    bar_size: int = 1_000_000,
+) -> FrameType:
+    """Generate tick bars for a given DataFrame.
+
+    The function takes a DataFrame, a timestamp column, a price column, a size column,
+    a symbol column, and a bar size as input.
+    The bar size is the dollar volume that will be aggregated into a single bar.
+    This function will never overlap bars between different days.
+
+    Args:
+    ----
+        df (FrameType): The DataFrame/LazyFrame to generate tick bars for.
+        timestamp_col (str): The name of the timestamp column in the DataFrame.
+        price_col (str): The name of the price column in the DataFrame.
+        size_col (str): The name of the size column in the DataFrame.
+        symbol_col (str): The name of the symbol column in the DataFrame.
+        bar_size (int): The dollar volume to aggregate into a single bar.
+
+    Returns:
+    -------
+        FrameType: The DataFrame/LazyFrame with dollar bars.
+
+    """
+    ohlcv = (
+        df.drop_nulls(subset=price_col)
+        .sort(timestamp_col)
+        .with_columns(
+            pl.col(timestamp_col).dt.date().alias("__date"),
+            pl.col(price_col).mul(pl.col(size_col)).alias("__dollar_volume"),
+        )
+    )
+    ohlcv = ohlcv.with_columns(
+        _bar_groups_expr("__dollar_volume", bar_size)
+        .over("__date", symbol_col)
+        .alias("__bar_groups")
+    ).unnest("__bar_groups")
+
+    # TODO
+    return (
+        ohlcv.vstack(
+            ohlcv.filter(
+                pl.col("__dollar_volume") != pl.col("bar_group__amount")
+            ).with_columns(
+                pl.col("__dollar_volume")
+                .truediv()
+                .sub(pl.col("bar_group__amount"))
+                .alias("bar_group__amount"),
+                pl.col("bar_group__id") + 1,
+            )
+        )
+        .select(
+            pl.all().exclude(size_col, "bar_group__amount", "__dollar_volume"),
             pl.col("bar_group__amount").alias(size_col),
         )
         .group_by("__date", symbol_col, "bar_group__id")
