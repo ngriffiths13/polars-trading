@@ -1,45 +1,70 @@
 #![allow(clippy::unused_unit)]
 use std::cmp::PartialOrd;
-use std::ops::{Add, Sub};
 
 use num::traits::{Signed, Zero};
 use polars::prelude::*;
 use pyo3_polars::derive::polars_expr;
 use serde::Deserialize;
 
-struct RowGroup<T> {
-    id: i32,
-    amount: T,
-}
-
-fn create_row_groups<T, I>(ca: &ChunkedArray<T>, bar_size: T::Native) -> StructChunked
+fn create_row_groups<T>(ca: &ChunkedArray<T>, bar_size: T::Native) -> PolarsResult<StructChunked>
 where
     T: PolarsNumericType,
     T::Native: Signed + Zero + PartialOrd,
+    ChunkedArray<T>: IntoSeries,
 {
-    let mut row_groups: Vec<RowGroup<T>> = Vec::with_capacity(ca.len());
-    let mut current_sum = T::zero();
-    let zero_value = T::zero();
+    let mut row_group_ids: Vec<i32> = Vec::with_capacity(ca.len());
+    let mut row_group_amounts: Vec<T::Native> = Vec::with_capacity(ca.len());
+    let mut current_sum = T::Native::zero();
     let mut group_id = 0;
-    // iterate over ca and add a group number and the value to the row groups as a RowGroup struct
-    // if the sum of the values in the group is greater than or equal to the bar_size, only keep the
-    // amount of the value up to the bar size. Reset the sum and start a new group. If a value is missing,
-    // include it in the current group with a zero value. Collect the vector of structs into a StructChunked.
-    todo!()
+
+    for val in ca.into_no_null_iter() {
+        if current_sum + val >= bar_size {
+            let remaining_amount = bar_size - current_sum;
+            row_group_ids.push(group_id);
+            row_group_amounts.push(remaining_amount);
+            group_id += 1;
+            current_sum = val - remaining_amount;
+        } else {
+            row_group_ids.push(group_id);
+            row_group_amounts.push(val);
+            current_sum += val;
+        }
+    }
+
+    // Create ChunkedArrays
+    let id_ca = Int32Chunked::new("bar_group__id", &row_group_ids);
+    let amount_ca = ChunkedArray::<T>::from_slice("bar_group__amount", &row_group_amounts);
+
+    // Create a StructChunked
+    let fields = vec![id_ca.into_series(), amount_ca.into_series()];
+
+    StructChunked::from_series("row_groups", &fields)
 }
 
 #[derive(Deserialize)]
-struct VolumeBars {
+struct BarGroupKwargs
+{
     bar_size: f64,
 }
 
-#[polars_expr(output_type=Float64)]
-fn volume_bars(inputs: &[Series], kwargs: VolumeBars) -> PolarsResult<Series> {
+fn bar_group_struct(input_fields: &[Field]) -> PolarsResult<Field> {
+    Ok(Field::new(
+        input_fields[0].name(),
+        DataType::Struct(vec![
+            Field::new("bar_group__id", DataType::Int32),
+            Field::new("bar_group__amount", input_fields[0].data_type().clone()),
+        ]),
+    ))
+}
+
+#[polars_expr(output_type_func=bar_group_struct)]
+fn bar_groups(inputs: &[Series], kwargs: BarGroupKwargs) -> PolarsResult<Series> {
     let groups = match inputs[0].dtype() {
-        DataType::Float64 => create_row_groups(inputs[0].f64().unwrap(), kwargs.bar_size as f64),
-        // DataType::Float32 => inputs[0].f32()?.cast(&DataType::Float64),
-        // DataType::Int64 => inputs[0].i64()?,
-        // DataType::Int32 => inputs[0].i32()?,
+        DataType::Float64 => create_row_groups(inputs[0].f64().unwrap(), kwargs.bar_size)?,
+        DataType::Float32 => create_row_groups(inputs[0].f32().unwrap(), kwargs.bar_size as f32)?,
+        DataType::Int64 => create_row_groups(inputs[0].i64().unwrap(), kwargs.bar_size as i64)?,
+        DataType::Int32 => create_row_groups(inputs[0].i32().unwrap(), kwargs.bar_size as i32)?,
         _ => return Err(PolarsError::ComputeError("Unsupported type".into())),
     };
+    Ok(groups.into_series())
 }
