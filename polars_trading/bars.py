@@ -1,14 +1,10 @@
 """Module containing functions to generate different types of bars."""
 
-from pathlib import Path
-
 import polars as pl
 from polars.plugins import register_plugin_function
 
-from polars_trading._utils import validate_columns
+from polars_trading._utils import LIB, validate_columns
 from polars_trading.typing import FrameType, IntoExpr
-
-LIB = Path(__file__).parent
 
 
 def _bar_groups_expr(expr: IntoExpr, bar_size: float) -> pl.Expr:
@@ -119,6 +115,7 @@ def tick_bars(
     size_col: str = "size",
     symbol_col: str = "symbol",
     bar_size: int = 100,
+    split_by_date: bool = True,
 ) -> FrameType:
     """Generate tick bars for a given DataFrame.
 
@@ -135,32 +132,34 @@ def tick_bars(
         size_col (str): The name of the size column in the DataFrame.
         symbol_col (str): The name of the symbol column in the DataFrame.
         bar_size (int): The number of ticks to aggregate into a single bar.
+        split_by_date (bool): Whether to split bars by date or not.
 
     Returns:
     -------
         FrameType: The DataFrame/LazyFrame with tick bars.
 
     """
-    ohlcv = (
-        df.drop_nulls(subset=price_col)
-        .sort(timestamp_col)
-        .with_columns(pl.col(timestamp_col).dt.date().alias("__date"))
-    )
+    over_cols = [symbol_col]
+    ohlcv = df.drop_nulls(subset=price_col).sort(timestamp_col)
+    if split_by_date:
+        ohlcv = ohlcv.with_columns(pl.col(timestamp_col).dt.date().alias("__date"))
+        over_cols.append("__date")
+
     ohlcv = ohlcv.with_columns(
-        (
-            ((pl.col(symbol_col).cum_count()).over(symbol_col, "__date") - 1)
-            // bar_size
-        ).alias(
+        (((pl.col(symbol_col).cum_count()).over(*over_cols) - 1) // bar_size).alias(
             "__tick_group",
         )
     )
 
-    return (
-        ohlcv.group_by("__tick_group", symbol_col, "__date")
+    bars = (
+        ohlcv.group_by("__tick_group", *over_cols)
         .agg(*_ohlcv_expr(timestamp_col, price_col, size_col))
-        .drop("__tick_group", "__date")
+        .drop("__tick_group")
         .sort(f"{timestamp_col}_end")
     )
+    if split_by_date:
+        bars = bars.drop("__date")
+    return bars
 
 
 @validate_columns("timestamp_col", "price_col", "size_col", "symbol_col")
@@ -172,6 +171,7 @@ def volume_bars(
     size_col: str = "size",
     symbol_col: str = "symbol",
     bar_size: int = 10_000,
+    split_by_date: bool = True,
 ) -> FrameType:
     """Generate tick bars for a given DataFrame.
 
@@ -188,24 +188,24 @@ def volume_bars(
         size_col (str): The name of the size column in the DataFrame.
         symbol_col (str): The name of the symbol column in the DataFrame.
         bar_size (int): The volume to aggregate into a single bar.
+        split_by_date (bool): Whether to split bars by date or not.
 
     Returns:
     -------
         FrameType: The DataFrame/LazyFrame with tick bars.
 
     """
-    ohlcv = (
-        df.drop_nulls(subset=price_col)
-        .sort(timestamp_col)
-        .with_columns(pl.col(timestamp_col).dt.date().alias("__date"))
-    )
+    over_cols = [symbol_col]
+    ohlcv = df.drop_nulls(subset=price_col).sort(timestamp_col)
+    if split_by_date:
+        ohlcv = ohlcv.with_columns(pl.col(timestamp_col).dt.date().alias("__date"))
+        over_cols.append("__date")
+
     ohlcv = ohlcv.with_columns(
-        _bar_groups_expr(size_col, bar_size)
-        .over("__date", symbol_col)
-        .alias("__bar_groups")
+        _bar_groups_expr(size_col, bar_size).over(*over_cols).alias("__bar_groups")
     ).unnest("__bar_groups")
 
-    return (
+    bars = (
         ohlcv.vstack(
             ohlcv.filter(pl.col(size_col) != pl.col("bar_group__amount")).with_columns(
                 pl.col(size_col)
@@ -218,11 +218,14 @@ def volume_bars(
             pl.all().exclude(size_col, "bar_group__amount"),
             pl.col("bar_group__amount").alias(size_col),
         )
-        .group_by("__date", symbol_col, "bar_group__id")
+        .group_by(*over_cols, "bar_group__id")
         .agg(_ohlcv_expr(timestamp_col, price_col, size_col))
-        .drop("__date", "bar_group__id")
+        .drop("bar_group__id")
         .sort(f"{timestamp_col}_end")
     )
+    if split_by_date:
+        bars = bars.drop("__date")
+    return bars
 
 
 @validate_columns("timestamp_col", "price_col", "size_col", "symbol_col")
@@ -234,6 +237,7 @@ def dollar_bars(
     size_col: str = "size",
     symbol_col: str = "symbol",
     bar_size: int = 1_000_000,
+    split_by_date: bool = True,
 ) -> FrameType:
     """Generate tick bars for a given DataFrame.
 
@@ -250,24 +254,29 @@ def dollar_bars(
         size_col (str): The name of the size column in the DataFrame.
         symbol_col (str): The name of the symbol column in the DataFrame.
         bar_size (int): The dollar volume to aggregate into a single bar.
+        split_by_date (bool): Whether to split bars by date or not.
 
     Returns:
     -------
         FrameType: The DataFrame/LazyFrame with dollar bars.
 
     """
+    over_cols = [symbol_col]
     ohlcv = (
         df.drop_nulls(subset=price_col)
         .sort(timestamp_col)
         .with_columns(
-            pl.col(timestamp_col).dt.date().alias("__date"),
             pl.col(price_col).mul(pl.col(size_col)).alias("__dollar_volume"),
         )
     )
+    if split_by_date:
+        ohlcv = ohlcv.with_columns(pl.col(timestamp_col).dt.date().alias("__date"))
+        over_cols.append("__date")
+
     ohlcv = (
         ohlcv.with_columns(
             _bar_groups_expr("__dollar_volume", bar_size)
-            .over("__date", symbol_col)
+            .over(*over_cols)
             .alias("__bar_groups")
         )
         .unnest("__bar_groups")
@@ -278,7 +287,7 @@ def dollar_bars(
         )
     )
 
-    return (
+    bars = (
         ohlcv.vstack(
             ohlcv.filter(pl.col(size_col) != pl.col("bar_group__amount")).with_columns(
                 pl.col(size_col)
@@ -291,8 +300,11 @@ def dollar_bars(
             pl.all().exclude(size_col, "bar_group__amount"),
             pl.col("bar_group__amount").alias(size_col),
         )
-        .group_by("__date", symbol_col, "bar_group__id")
+        .group_by(*over_cols, "bar_group__id")
         .agg(_ohlcv_expr(timestamp_col, price_col, size_col))
-        .drop("__date", "bar_group__id")
+        .drop("bar_group__id")
         .sort(f"{timestamp_col}_end")
     )
+    if split_by_date:
+        bars = bars.drop("__date")
+    return bars

@@ -23,7 +23,7 @@ jobs:
 
       - name: Run tests
         # For example, using `pytest`
-        run: uv run pytest tests
+        run: uv run pytest tests --benchmark-disable
   lint:
     runs-on: ubuntu-latest
 

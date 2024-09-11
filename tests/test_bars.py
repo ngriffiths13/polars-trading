@@ -4,9 +4,8 @@ import pytest
 from datetime import datetime
 from polars.testing import assert_frame_equal
 
-from polars_trading.bars import time_bars, tick_bars
+from polars_trading.bars import time_bars, tick_bars, volume_bars, dollar_bars
 from polars_trading._testing.data import generate_trade_data
-from polars_trading._testing import bars as test_bars
 
 
 @pytest.fixture
@@ -118,3 +117,15 @@ def test__tick_bars__polars_benchmark(benchmark, trade_data):
 def test__tick_bars__pandas_benchmark(benchmark, trade_data):
     trade_data = trade_data.to_pandas()
     benchmark(pandas_tick_bars, trade_data, 100)
+
+
+@pytest.mark.benchmark(group="volume_bars")
+@pytest.mark.parametrize("trade_data", [100, 10_000, 1_000_000], indirect=True)
+def test__volume_bars__polars_benchmark(benchmark, trade_data):
+    benchmark(volume_bars, trade_data, timestamp_col="ts_event", bar_size=10_000)
+
+
+@pytest.mark.benchmark(group="dollar_bars")
+@pytest.mark.parametrize("trade_data", [100, 10_000, 1_000_000], indirect=True)
+def test__dollar_bars__polars_benchmark(benchmark, trade_data):
+    benchmark(dollar_bars, trade_data, timestamp_col="ts_event", bar_size=100_000)

@@ -1,15 +1,17 @@
 import inspect
 from functools import wraps
+from pathlib import Path
 from typing import Callable
 
 import polars as pl
 
-from polars_trading.typing import FrameType
+from polars_trading.typing import FrameType, IntoExpr
+
+LIB = Path(__file__).parent
 
 
 def validate_columns(*column_args: str) -> Callable:
-    """
-    Validate that the specified columns exist in the dataframe.
+    """Validate that the specified columns exist in the dataframe.
 
     Args:
     ----
@@ -22,8 +24,7 @@ def validate_columns(*column_args: str) -> Callable:
     """
 
     def decorator(func: Callable) -> Callable:
-        """
-        Decorate validation of columns in a polars DataFrame.
+        """Decorate validation of columns in a polars DataFrame.
 
         Args:
         ----
@@ -37,8 +38,7 @@ def validate_columns(*column_args: str) -> Callable:
 
         @wraps(func)
         def wrapper(*args: FrameType, **kwargs: str) -> Callable:
-            """
-            Validate that the specified columns exist in the dataframe.
+            """Validate that the specified columns exist in the dataframe.
 
             Args:
             ----
@@ -83,3 +83,25 @@ def validate_columns(*column_args: str) -> Callable:
         return wrapper
 
     return decorator
+
+
+def parse_into_expr(expr: IntoExpr) -> pl.Expr:
+    """Parse a string into a polars expression.
+
+    Args:
+    ----
+        expr: IntoExpr - The expression to parse.
+
+    Returns:
+    -------
+        pl.Expr
+
+    """
+    match expr:
+        case pl.Expr():
+            pass
+        case str():
+            expr = pl.col(expr)
+        case _:
+            expr = pl.lit(expr)
+    return expr
