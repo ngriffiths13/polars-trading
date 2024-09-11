@@ -87,6 +87,8 @@ dev-dependencies = [
     "marimo>=0.8.8",
     "maturin>=1.7.1",
     "mimesis>=12.1.0",
+    "mkdocs-gen-files>=0.5.0",
+    "mkdocstrings[python]>=0.26.1",
     "pandas>=2.2.2",
     "pip>=24.2",
     "pre-commit>=3.8.0",
@@ -105,3 +107,9 @@ version_scheme = "semver2"
 version_provider = "cargo"
 update_changelog_on_bump = true
 major_version_zero = true
+
+[tool.pytest.ini_options]
+addopts = [
+    "--benchmark-disable",
+    "--benchmark-columns=min,mean,median,max,stddev",
+]

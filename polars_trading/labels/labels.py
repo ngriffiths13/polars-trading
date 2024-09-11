@@ -12,25 +12,27 @@ if TYPE_CHECKING:
     from polars_trading.typing import IntoExpr
 
 
-def _classify_return_by_threshold(
-    returns: pl.Expr, threshold: IntoExpr | None
-) -> pl.Expr:
+def _classify_by_threshold(values: pl.Expr, threshold: IntoExpr | None) -> pl.Expr:
     if threshold is None:
-        return returns.sign().cast(pl.Int32)
+        return values.sign().cast(pl.Int32)
     threshold = parse_into_expr(threshold)
     return (
-        pl.when(returns > threshold.abs())
+        pl.when(values > threshold.abs())
         .then(1)
-        .when(returns < -threshold.abs())
+        .when(values < -threshold.abs())
         .then(-1)
-        .when(returns.is_between(-threshold.abs(), threshold.abs()))
+        .when(values.is_between(-threshold.abs(), threshold.abs()))
         .then(0)
         .otherwise(None)
     ).cast(pl.Int32)
 
 
 def fixed_time_return_classification(
-    prices: IntoExpr, window: int, threshold: IntoExpr | None = None, offset: int = 1
+    prices: IntoExpr,
+    window: int,
+    threshold: IntoExpr | None = None,
+    offset: int = 1,
+    symbol: IntoExpr | None = None,
 ) -> pl.Expr:
     """Calculate the fixed time return as a classification label.
 
@@ -51,16 +53,23 @@ def fixed_time_return_classification(
             decision to capture the return from t+1 to t+1+window. This way you do not
             include the current price in your calculation that you likely can't execute
             at.
+        symbol: IntoExpr | None - The symbol of the financial instrument. This is used
+            to calculate returns for multiple symbols at once. If None, it is assumed
+            that the prices are for a single symbol.
 
     Returns:
     -------
         pl.Expr: The fixed time return classification label as an expression.
     """
     return_expr = fixed_time_return(prices, window, offset)
-    return _classify_return_by_threshold(return_expr, threshold)
+    if symbol is not None:
+        return_expr = return_expr.over(parse_into_expr(symbol))
+    return _classify_by_threshold(return_expr, threshold)
 
 
-def fixed_time_return(prices: IntoExpr, window: int, offset: int = 1) -> pl.Expr:
+def fixed_time_return(
+    prices: IntoExpr, window: int, offset: int = 1, symbol: IntoExpr | None = None
+) -> pl.Expr:
     """Calculate the fixed time return.
 
     This function calculates the fixed time return of a financial instrument. The
@@ -76,32 +85,20 @@ def fixed_time_return(prices: IntoExpr, window: int, offset: int = 1) -> pl.Expr
             decision to capture the return from t+1 to t+1+window. This way you do not
             include the current price in your calculation that you likely can't execute
             at.
+        symbol: IntoExpr | None - The symbol of the financial instrument. This is used
+            to calculate returns for multiple symbols at once. If None, it is assumed
+            that the prices are for a single symbol.
 
     Returns:
     -------
         pl.Expr: The fixed time return as an expression.
     """
-    return (
+    return_expr = (
         pl.col(prices)
         .shift(-offset - window)
         .truediv(pl.col(prices).shift(-offset))
         .sub(1)
     )
-
-
-def fixed_time_sharpe_classification(
-    prices: IntoExpr, window: int, threshold: IntoExpr | None = None, offset: int = 1
-) -> pl.Expr: ...
-
-
-def fixed_time_sharpe(prices: IntoExpr, window: int, offset: int = 1) -> pl.Expr: ...
-
-
-def fixed_time_excess_return_over_mean(
-    prices: IntoExpr, window: int, offset: int = 1
-) -> pl.Expr: ...
-
-
-def fixed_time_excess_return_over_mean_classification(
-    prices: IntoExpr, risk_free_rate: IntoExpr, window: int, offset: int = 1
-) -> pl.Expr: ...
+    if symbol is not None:
+        return_expr = return_expr.over(parse_into_expr(symbol))
+    return return_expr
