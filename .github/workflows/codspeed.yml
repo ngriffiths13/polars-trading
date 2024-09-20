@@ -9,6 +9,9 @@ on:
   # performance analysis in order to generate initial data.
   workflow_dispatch:
 
+env:
+  UV_SYSTEM_PYTHON: 1
+
 jobs:
   benchmarks:
     runs-on: ubuntu-latest
@@ -28,4 +31,4 @@ jobs:
         uses: CodSpeedHQ/action@v3
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
-          run: uv run pytest tests/ --codspeed -m 'benchmark and not pandas'
+          run: pytest tests/ --codspeed -m 'benchmark and not pandas'
