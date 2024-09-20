@@ -1,25 +1,14 @@
-mod bars;
-mod labels;
-mod nbbo;
-mod symmetric_cusum_filter;
-// use pyo3::prelude::*;
+use pyo3::types::{PyModule, PyModuleMethods};
+use pyo3::{pymodule, Bound, PyResult};
+use pyo3_polars::PolarsAllocator;
 
-#[cfg(target_os = "linux")]
-use jemallocator::Jemalloc;
+mod bars;
+
+#[pymodule]
+fn _internal(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    Ok(())
+}
 
 #[global_allocator]
-#[cfg(target_os = "linux")]
-static ALLOC: Jemalloc = Jemalloc;
-
-// Prints a message.
-// #[pyfunction]
-// fn hello() -> PyResult<String> {
-//     Ok("Hello from polars-finance!".into())
-// }
-
-// /// A Python module implemented in Rust.
-// #[pymodule]
-// fn _lowlevel(_py: Python, m: &PyModule) -> PyResult<()> {
-//     m.add_function(wrap_pyfunction!(hello, m)?)?;
-//     Ok(())
-// }
+static ALLOC: PolarsAllocator = PolarsAllocator::new();
