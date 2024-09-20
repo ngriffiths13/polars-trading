@@ -91,6 +91,7 @@ def test__time_bars__polars_benchmark(benchmark, trade_data):
     benchmark(time_bars, trade_data, timestamp_col="ts_event", bar_size="1d")
 
 
+@pytest.mark.pandas
 @pytest.mark.benchmark(group="time_bars")
 @pytest.mark.parametrize(
     "trade_data",
@@ -135,6 +136,7 @@ def test__tick_bars__polars_benchmark(benchmark, trade_data):
     benchmark(tick_bars, trade_data, timestamp_col="ts_event", bar_size=100)
 
 
+@pytest.mark.pandas
 @pytest.mark.benchmark(group="tick_bars")
 @pytest.mark.parametrize(
     "trade_data",

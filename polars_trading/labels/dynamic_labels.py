@@ -22,6 +22,10 @@ def daily_vol(
     in the last 24 hour period to the current price. It then calculates the exponential
     weighted standard deviation of the returns.
 
+    This currently fails to account for weekend returns when there is no trading.
+
+    Marco Lopez de Prado, Advances in Financial Machine Learning, pg. 44
+
     Args:
     ----
         df (DataFrame): The DataFrame containing the price series.
