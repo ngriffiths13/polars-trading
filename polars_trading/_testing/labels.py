@@ -12,3 +12,12 @@ def get_daily_vol(close: pd.Series, span0: int = 100) -> pd.Series:
     )
     df0 = close.loc[df0.index] / close.loc[df0.values].values - 1
     return df0.ewm(span=span0).std().fillna(0.0)
+
+
+def apply_pt_sl_on_t1(
+    close: pd.Series, events: pd.DataFrame, pt_sl: tuple[float, float]
+) -> None:
+    """Apply stop loss and profit taking.
+
+    AFML pg. 45
+    """

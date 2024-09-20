@@ -93,7 +93,8 @@ dev-dependencies = [
     "pip>=24.2",
     "pre-commit>=3.8.0",
     "pyarrow>=17.0.0",
-    "pytest-benchmark>=4.0.0",
+    "pytest-benchmark[histogram]>=4.0.0",
+    "pytest-codspeed>=2.2.1",
     "pytest>=8.3.2",
     "ruff>=0.6.3",
     "setuptools>=74.1.0",
@@ -109,7 +110,10 @@ update_changelog_on_bump = true
 major_version_zero = true
 
 [tool.pytest.ini_options]
+markers = ["pandas"]
 addopts = [
     "--benchmark-disable",
     "--benchmark-columns=min,mean,median,max,stddev",
+    "-m not pandas",
+    "-m not benchmark",
 ]

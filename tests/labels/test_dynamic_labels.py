@@ -64,6 +64,7 @@ def test__daily_vol__polars_benchmark(benchmark, trade_data):
     benchmark(daily_vol(trade_data.lazy(), "ts_event", "price", "symbol", 100).collect)
 
 
+@pytest.mark.pandas
 @pytest.mark.benchmark(group="daily_vol")
 @pytest.mark.parametrize(
     "trade_data",
