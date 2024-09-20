@@ -33,4 +33,4 @@ jobs:
         uses: CodSpeedHQ/action@v3
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
-          run: uv run pytest tests/ --codspeed -m 'benchmark and not pandas'
+          run: uv run pytest tests/ -m 'benchmark and not pandas' --codspeed
