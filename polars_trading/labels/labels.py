@@ -94,9 +94,9 @@ def fixed_time_return(
         pl.Expr: The fixed time return as an expression.
     """
     return_expr = (
-        pl.col(prices)
+        parse_into_expr(prices)
         .shift(-offset - window)
-        .truediv(pl.col(prices).shift(-offset))
+        .truediv(parse_into_expr(prices).shift(-offset))
         .sub(1)
     )
     if symbol is not None:

@@ -8,11 +8,6 @@ from polars_trading.bars import time_bars, tick_bars, volume_bars, dollar_bars
 from polars_trading._testing.data import generate_trade_data
 
 
-@pytest.fixture
-def trade_data(request):
-    return generate_trade_data(request.param)
-
-
 def pandas_time_bars(df: pd.DataFrame, period: str) -> pd.DataFrame:
     df.index = pd.to_datetime(df["ts_event"])
     df["pvt"] = df["price"] * df["size"]
@@ -65,7 +60,9 @@ def pandas_tick_bars(df: pd.DataFrame, n_ticks: int) -> pd.DataFrame:
     return resampled_df
 
 
-@pytest.mark.parametrize("trade_data", [10_000], indirect=True)
+@pytest.mark.parametrize(
+    "trade_data", [{"n_rows": 10_000, "n_companies": 3}], indirect=True
+)
 def test__time_bars__matches_pandas(trade_data):
     pd_df = pandas_time_bars(trade_data.to_pandas(), "1d")
     pd_df.index = pd_df.index.to_timestamp()
@@ -81,19 +78,37 @@ def test__time_bars__matches_pandas(trade_data):
 
 
 @pytest.mark.benchmark(group="time_bars")
-@pytest.mark.parametrize("trade_data", [100, 10_000, 1_000_000], indirect=True)
+@pytest.mark.parametrize(
+    "trade_data",
+    [
+        {"n_rows": 1000, "n_companies": 3},
+        {"n_rows": 10_000, "n_companies": 3},
+        {"n_rows": 1_000_000, "n_companies": 20},
+    ],
+    indirect=True,
+)
 def test__time_bars__polars_benchmark(benchmark, trade_data):
     benchmark(time_bars, trade_data, timestamp_col="ts_event", bar_size="1d")
 
 
 @pytest.mark.benchmark(group="time_bars")
-@pytest.mark.parametrize("trade_data", [100, 10_000, 1_000_000], indirect=True)
+@pytest.mark.parametrize(
+    "trade_data",
+    [
+        {"n_rows": 1000, "n_companies": 3},
+        {"n_rows": 10_000, "n_companies": 3},
+        {"n_rows": 1_000_000, "n_companies": 10},
+    ],
+    indirect=True,
+)
 def test__time_bars__pandas_benchmark(benchmark, trade_data):
     trade_data = trade_data.to_pandas()
     benchmark(pandas_time_bars, trade_data, "1d")
 
 
-@pytest.mark.parametrize("trade_data", [10000], indirect=True)
+@pytest.mark.parametrize(
+    "trade_data", [{"n_rows": 10_000, "n_companies": 3}], indirect=True
+)
 def test__tick_bars__matches_pandas(trade_data):
     pd_df = pandas_tick_bars(trade_data.to_pandas(), 100)
     res = tick_bars(trade_data, timestamp_col="ts_event", bar_size=100)
@@ -107,25 +122,57 @@ def test__tick_bars__matches_pandas(trade_data):
 
 
 @pytest.mark.benchmark(group="tick_bars")
-@pytest.mark.parametrize("trade_data", [100, 10_000, 1_000_000], indirect=True)
+@pytest.mark.parametrize(
+    "trade_data",
+    [
+        {"n_rows": 1000, "n_companies": 3},
+        {"n_rows": 10_000, "n_companies": 3},
+        {"n_rows": 1_000_000, "n_companies": 10},
+    ],
+    indirect=True,
+)
 def test__tick_bars__polars_benchmark(benchmark, trade_data):
     benchmark(tick_bars, trade_data, timestamp_col="ts_event", bar_size=100)
 
 
 @pytest.mark.benchmark(group="tick_bars")
-@pytest.mark.parametrize("trade_data", [100, 10_000, 1_000_000], indirect=True)
+@pytest.mark.parametrize(
+    "trade_data",
+    [
+        {"n_rows": 1000, "n_companies": 3},
+        {"n_rows": 10_000, "n_companies": 3},
+        {"n_rows": 1_000_000, "n_companies": 10},
+    ],
+    indirect=True,
+)
 def test__tick_bars__pandas_benchmark(benchmark, trade_data):
     trade_data = trade_data.to_pandas()
     benchmark(pandas_tick_bars, trade_data, 100)
 
 
 @pytest.mark.benchmark(group="volume_bars")
-@pytest.mark.parametrize("trade_data", [100, 10_000, 1_000_000], indirect=True)
+@pytest.mark.parametrize(
+    "trade_data",
+    [
+        {"n_rows": 1000, "n_companies": 3},
+        {"n_rows": 10_000, "n_companies": 3},
+        {"n_rows": 1_000_000, "n_companies": 10},
+    ],
+    indirect=True,
+)
 def test__volume_bars__polars_benchmark(benchmark, trade_data):
     benchmark(volume_bars, trade_data, timestamp_col="ts_event", bar_size=10_000)
 
 
 @pytest.mark.benchmark(group="dollar_bars")
-@pytest.mark.parametrize("trade_data", [100, 10_000, 1_000_000], indirect=True)
+@pytest.mark.parametrize(
+    "trade_data",
+    [
+        {"n_rows": 1000, "n_companies": 3},
+        {"n_rows": 10_000, "n_companies": 3},
+        {"n_rows": 1_000_000, "n_companies": 10},
+    ],
+    indirect=True,
+)
 def test__dollar_bars__polars_benchmark(benchmark, trade_data):
     benchmark(dollar_bars, trade_data, timestamp_col="ts_event", bar_size=100_000)
