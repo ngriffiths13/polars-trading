@@ -115,5 +115,4 @@ addopts = [
     "--benchmark-disable",
     "--benchmark-columns=min,mean,median,max,stddev",
     "-m not pandas",
-    "-m not benchmark",
 ]
