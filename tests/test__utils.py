@@ -3,6 +3,7 @@ import pytest
 import polars as pl
 
 
+@pytest.mark.benchmark
 def test__validate_columns__valid():
     @validate_columns("timestamp_col", "price_col", "size_col", "symbol_col")
     def dummy_func(df, **kwargs):
@@ -20,6 +21,7 @@ def test__validate_columns__valid():
     dummy_func(df, timestamp_col="ts", price_col="p", size_col="s", symbol_col="sy")
 
 
+@pytest.mark.benchmark
 def test__validate_columns__invalid():
     @validate_columns("timestamp_col", "price_col", "size_col", "symbol_col")
     def dummy_func(df, **kwargs):
@@ -40,6 +42,7 @@ def test__validate_columns__invalid():
         )
 
 
+@pytest.mark.benchmark
 def test__validate_columns__df_not_passed():
     @validate_columns("timestamp_col", "price_col", "size_col", "symbol_col")
     def dummy_func(df, **kwargs):
@@ -56,6 +59,7 @@ def test__validate_columns__df_not_passed():
         dummy_func(df, timestamp_col="ts", price_col="p", size_col="s", symbol_col="sy")
 
 
+@pytest.mark.benchmark
 def test__validate_columns__default_args():
     @validate_columns("timestamp_col", "price_col", "size_col", "symbol_col")
     def dummy_func(df, timestamp_col="ts", **kwargs):
