@@ -69,17 +69,14 @@ def test__daily_vol__polars_benchmark(benchmark, trade_data):
 @pytest.mark.parametrize(
     "trade_data",
     [
-        {"n_rows": 10_000, "n_companies": 3},
         {"n_rows": 100_000, "n_companies": 5},
-        {"n_rows": 1_000_000, "n_companies": 10},
     ],
     indirect=True,
 )
 def test__daily_vol__pandas_benchmark(benchmark, trade_data):
-    pd_df = (
-        trade_data.to_pandas()
-        .set_index("ts_event")[["symbol", "price"]]
-    )
+    pd_df = trade_data.to_pandas().set_index("ts_event")[["symbol", "price"]]
+
     def get_daily_vol_pd(pd_df):
         return pd_df.groupby("symbol")["price"].apply(get_daily_vol).reset_index()
+
     benchmark(get_daily_vol_pd, pd_df)

@@ -81,9 +81,7 @@ def test__time_bars__matches_pandas(trade_data):
 @pytest.mark.parametrize(
     "trade_data",
     [
-        {"n_rows": 1000, "n_companies": 3},
         {"n_rows": 10_000, "n_companies": 3},
-        {"n_rows": 1_000_000, "n_companies": 20},
     ],
     indirect=True,
 )
@@ -96,9 +94,7 @@ def test__time_bars__polars_benchmark(benchmark, trade_data):
 @pytest.mark.parametrize(
     "trade_data",
     [
-        {"n_rows": 1000, "n_companies": 3},
         {"n_rows": 10_000, "n_companies": 3},
-        {"n_rows": 1_000_000, "n_companies": 10},
     ],
     indirect=True,
 )
@@ -126,9 +122,7 @@ def test__tick_bars__matches_pandas(trade_data):
 @pytest.mark.parametrize(
     "trade_data",
     [
-        {"n_rows": 1000, "n_companies": 3},
         {"n_rows": 10_000, "n_companies": 3},
-        {"n_rows": 1_000_000, "n_companies": 10},
     ],
     indirect=True,
 )
@@ -141,9 +135,7 @@ def test__tick_bars__polars_benchmark(benchmark, trade_data):
 @pytest.mark.parametrize(
     "trade_data",
     [
-        {"n_rows": 1000, "n_companies": 3},
         {"n_rows": 10_000, "n_companies": 3},
-        {"n_rows": 1_000_000, "n_companies": 10},
     ],
     indirect=True,
 )
@@ -156,9 +148,7 @@ def test__tick_bars__pandas_benchmark(benchmark, trade_data):
 @pytest.mark.parametrize(
     "trade_data",
     [
-        {"n_rows": 1000, "n_companies": 3},
         {"n_rows": 10_000, "n_companies": 3},
-        {"n_rows": 1_000_000, "n_companies": 10},
     ],
     indirect=True,
 )
@@ -170,9 +160,7 @@ def test__volume_bars__polars_benchmark(benchmark, trade_data):
 @pytest.mark.parametrize(
     "trade_data",
     [
-        {"n_rows": 1000, "n_companies": 3},
         {"n_rows": 10_000, "n_companies": 3},
-        {"n_rows": 1_000_000, "n_companies": 10},
     ],
     indirect=True,
 )
