@@ -99,6 +99,7 @@ dev-dependencies = [
     "pytest-benchmark[histogram]>=4.0.0",
     "pytest-codspeed>=2.2.1",
     "mimesis>=12.1.0",
+    "pytest-cov>=5.0.0",
 ]
 
 [tool.commitizen]
@@ -115,4 +116,10 @@ addopts = [
     "--benchmark-disable",
     "--benchmark-columns=min,mean,median,max,stddev",
     "-m not pandas",
+    "--cov=polars_trading",
+    "--cov-report=term-missing",
+    "--cov-fail-under=80",
+    "--cov-config=pyproject.toml",
 ]
+[tool.coverage.run]
+omit = ["polars_trading/_testing/*"]

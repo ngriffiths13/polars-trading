@@ -13,3 +13,4 @@ __pycache__/
 data/
 .DS_Store
 scratchpad.py
+.coverage*
