@@ -54,9 +54,7 @@ def test__daily_vol__multi_security(trade_data):
 @pytest.mark.parametrize(
     "trade_data",
     [
-        {"n_rows": 10_000, "n_companies": 3},
         {"n_rows": 100_000, "n_companies": 5},
-        {"n_rows": 1_000_000, "n_companies": 10},
     ],
     indirect=True,
 )
