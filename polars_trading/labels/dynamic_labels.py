@@ -39,15 +39,16 @@ def daily_vol(
     Returns:
         FrameType: The DataFrame with the daily volatility.
     """
-    returns = (
-        df.sort(timestamp_col)
-        .rolling(timestamp_col, period="24h", group_by=symbol_col)
-        .agg(pl.last(price_col).truediv(pl.first(price_col)).sub(1).alias("return"))
-    )
-    returns = returns.filter(
-        (pl.col(timestamp_col) - timedelta(hours=24))
-        > pl.col(timestamp_col).min().over(symbol_col)
-    )
+    on_clause = [timestamp_col] if symbol_col is None else [timestamp_col, symbol_col]
+    df = df.sort(timestamp_col)
+    lagged_prices = df.select(
+        *on_clause,
+        (pl.col(timestamp_col) - timedelta(hours=24)).alias("lookback"),
+    ).join_asof(df, left_on="lookback", right_on=timestamp_col, by=symbol_col)
+    returns = df.join(
+        lagged_prices.select(*on_clause, pl.col(price_col).alias("lookback_price")),
+        on=on_clause,
+    ).with_columns(pl.col(price_col).truediv("lookback_price").sub(1).alias("return"))
     vol_expr = (
         pl.col("return")
         .ewm_std(span=span)
