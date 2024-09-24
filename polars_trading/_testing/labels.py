@@ -16,8 +16,18 @@ def get_daily_vol(close: pd.Series, span0: int = 100) -> pd.Series:
 
 def apply_pt_sl_on_t1(
     close: pd.Series, events: pd.DataFrame, pt_sl: tuple[float, float]
-) -> None:
+) -> pd.DataFrame:
     """Apply stop loss and profit taking.
 
     AFML pg. 45
     """
+    out = events[["t1"]].copy(deep=True)
+    pt = pt_sl[0] * events["trgt"] if pt_sl[0] > 0 else pd.Series(index=events.index)
+    sl = -pt_sl[1] * events["trgt"] if pt_sl[1] > 0 else pd.Series(index=events.index)
+
+    for loc, t1 in events["t1"].fillna(close.index[-1]).items():
+        df0 = close[loc:t1]  # path prices
+        df0 = (df0 / close[loc] - 1) * events.at[loc, "side"]  # path returns
+        out.loc[loc, "sl"] = df0[df0 < sl[loc]].index.min()  # earliest stop loss
+        out.loc[loc, "pt"] = df0[df0 < pt[loc]].index.min()  # earliest profit taking
+    return out

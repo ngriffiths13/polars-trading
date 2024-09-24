@@ -3,6 +3,7 @@ use pyo3::{pymodule, Bound, PyResult};
 use pyo3_polars::PolarsAllocator;
 
 mod bars;
+mod labels;
 
 #[pymodule]
 fn _internal(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -10,5 +11,5 @@ fn _internal(m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-#[global_allocator]
-static ALLOC: PolarsAllocator = PolarsAllocator::new();
+// #[global_allocator]
+// static ALLOC: PolarsAllocator = PolarsAllocator::new();
