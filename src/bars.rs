@@ -42,8 +42,7 @@ where
 }
 
 #[derive(Deserialize)]
-struct BarGroupKwargs
-{
+struct BarGroupKwargs {
     bar_size: f64,
 }
 

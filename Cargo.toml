@@ -13,3 +13,6 @@ pyo3-polars = { version = "0.16.0", features = ["derive", "dtype-struct"] }
 serde = { version = "1", features = ["derive"] }
 polars = { version = "0.42.0", features = ["dtype-struct"] }
 num = "0.4.3"
+
+[dev-dependencies]
+approx = "0.5.1"
