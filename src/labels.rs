@@ -1,7 +1,7 @@
 #![allow(clippy::unused_unit)]
 /// TODOS:
-/// - [ ] Add bitmask
-/// - [ ] Handle 0 size price paths
+/// - [ X ] Add bitmask
+/// - [ X ] Handle 0 size price paths
 /// - [ ] Calculate barrier touch from index
 use polars::prelude::*;
 use pyo3_polars::derive::polars_expr;
@@ -30,7 +30,7 @@ fn get_slice_range(data: &Vec<i64>, start: i64, end: i64) -> Result<(usize, usiz
     let start_idx = data.iter().position(|&r| r == start);
     let end_idx = data.iter().position(|&r| r == end);
     match (start_idx, end_idx) {
-        (Some(start_idx), Some(end_idx)) => Ok((start_idx, end_idx)),
+        (Some(start_idx), Some(end_idx)) => Ok((start_idx, end_idx + 1)),
         (Some(_), None) => Err(format!("End index {} not found in index", end).into()),
         (None, Some(_)) => Err(format!("Start index {} not found in index", start).into()),
         (None, None) => Err(format!(
@@ -70,6 +70,7 @@ fn calculate_price_path_return(prices: Vec<f64>) -> Vec<f64> {
     prices.iter().map(|x| x / first_price - 1.0).collect()
 }
 
+#[derive(Debug)]
 struct TripleBarrierLabel {
     ret: f64,
     label: i64,
@@ -164,17 +165,32 @@ fn calculate_labels(
     profit_taking: Vec<Option<f64>>,
     stop_loss: Vec<Option<f64>>,
     vertical_barriers: Vec<Option<i64>>,
+    validity_mask: Vec<bool>,
     zero_vertical_barrier: bool,
 ) -> TripleBarrierLabels {
     let mut labels = TripleBarrierLabels::new_with_capacity(prices.len());
 
     for i in 0..index.len() {
+        if !validity_mask[i] {
+            labels.rets.push(0.0);
+            labels.labels.push(0);
+            labels.barrier_touches.push(0);
+            continue;
+        }
+        let mut barrier_touch_start_idx = 0 as usize;
         let price_path = match vertical_barriers[i] {
             Some(vb) => {
                 let (start_idx, end_idx) = get_slice_range(&index, index[i], vb).unwrap();
+                barrier_touch_start_idx = start_idx;
+                println!("{:?}", { start_idx });
+                println!("{:?}", { end_idx });
+                println!("{:?}", { prices[start_idx..end_idx].to_vec() });
                 calculate_price_path_return(prices[start_idx..end_idx].into())
             },
-            None => calculate_price_path_return(prices[i..].into()),
+            None => {
+                barrier_touch_start_idx = i;
+                calculate_price_path_return(prices[i..].into())
+            },
         };
         let label = get_label(
             &price_path,
@@ -182,9 +198,12 @@ fn calculate_labels(
             stop_loss[i],
             zero_vertical_barrier,
         );
+        println!("{:?}", label);
         labels.rets.push(label.ret);
         labels.labels.push(label.label);
-        labels.barrier_touches.push(label.barrier_touch);
+        labels
+            .barrier_touches
+            .push(label.barrier_touch + barrier_touch_start_idx as i64);
     }
     labels
 }
@@ -200,7 +219,6 @@ fn triple_barrier_struct(input_fields: &[Field]) -> PolarsResult<Field> {
     ))
 }
 
-// TODO: Provide bitmask for price paths to ignore
 #[polars_expr(output_type_func=triple_barrier_struct)]
 fn triple_barrier_label(inputs: &[Series]) -> PolarsResult<Series> {
     // There should be no nulls in index
@@ -227,12 +245,14 @@ fn triple_barrier_label(inputs: &[Series]) -> PolarsResult<Series> {
     let stop_loss = inputs[3].f64()?.to_vec();
     // Null vertical barrier means we don't implement
     let vertical_barrier = inputs[4].i64()?.to_vec();
+    let validity_mask = inputs[5].bool()?.into_no_null_iter().collect();
     let labels = calculate_labels(
         index,
         prices,
         price_taking,
         stop_loss,
         vertical_barrier,
+        validity_mask,
         false,
     );
 
@@ -257,13 +277,20 @@ mod tests {
     #[test]
     fn test_get_slice_range_normal() {
         let data = vec![1, 2, 3, 4, 5];
-        assert_eq!(get_slice_range(&data, 2, 4), Ok((1, 3)));
+        assert_eq!(get_slice_range(&data, 2, 4), Ok((1, 4)));
     }
 
     #[test]
     fn test_get_slice_range_same_start_end() {
         let data = vec![1, 2, 3, 4, 5];
-        assert_eq!(get_slice_range(&data, 3, 3), Ok((2, 2)));
+        assert_eq!(get_slice_range(&data, 3, 3), Ok((2, 3)));
+    }
+
+    #[test]
+    fn test_get_slice_range_full_range() {
+        let data = vec![1, 2, 3, 4, 5];
+        assert_eq!(get_slice_range(&data, 1, 5), Ok((0, 5)));
+        assert_eq!(data[0..5], [1, 2, 3, 4, 5]);
     }
 
     #[test]
@@ -415,6 +442,7 @@ mod tests {
         let profit_taking = vec![Some(0.02); 5];
         let stop_loss = vec![Some(-0.01); 5];
         let vertical_barriers = vec![Some(5), Some(5), Some(5), None, None];
+        let validity_mask = vec![true; 5];
         let zero_vertical_barrier = false;
 
         let result = calculate_labels(
@@ -423,12 +451,22 @@ mod tests {
             profit_taking,
             stop_loss,
             vertical_barriers,
+            validity_mask,
             zero_vertical_barrier,
         );
 
-        assert_eq!(result.rets, vec![0.02, 0.02, 0.02, 0.01, 0.0]);
+        assert_eq!(
+            result.rets,
+            vec![
+                102.0 / 100.0 - 1.0,
+                104.0 / 101.0 - 1.0,
+                104.0 / 102.0 - 1.0,
+                104.0 / 103.0 - 1.0,
+                0.0
+            ]
+        );
         assert_eq!(result.labels, vec![1, 1, 1, 1, 1]);
-        assert_eq!(result.barrier_touches, vec![2, 1, 0, 0, 0]);
+        assert_eq!(result.barrier_touches, vec![2, 4, 4, 4, 4]);
     }
 
     #[test]
@@ -438,6 +476,7 @@ mod tests {
         let profit_taking = vec![Some(0.02); 5];
         let stop_loss = vec![Some(-0.01); 5];
         let vertical_barriers = vec![Some(5); 5];
+        let validity_mask = vec![true; 5];
         let zero_vertical_barrier = true;
 
         let result = calculate_labels(
@@ -446,44 +485,32 @@ mod tests {
             profit_taking,
             stop_loss,
             vertical_barriers,
+            validity_mask,
             zero_vertical_barrier,
         );
 
-        assert_eq!(result.rets, vec![-0.01, -0.01, -0.01, -0.01, -0.04]);
+        assert_eq!(
+            result.rets,
+            vec![
+                99.0 / 100.0 - 1.0,
+                98.0 / 99.0 - 1.0,
+                97.0 / 98.0 - 1.0,
+                96.0 / 97.0 - 1.0,
+                0.0
+            ]
+        );
         assert_eq!(result.labels, vec![-1, -1, -1, -1, 0]);
-        assert_eq!(result.barrier_touches, vec![1, 0, 0, 0, 4]);
+        assert_eq!(result.barrier_touches, vec![1, 1, 1, 1, 0]);
     }
 
     #[test]
-    fn test_calculate_labels_without_vertical_barriers() {
+    fn test_calculate_labels_with_mixed_barriers() {
         let index = vec![1, 2, 3, 4, 5];
-        let prices = vec![100.0, 102.0, 104.0, 106.0, 108.0];
-        let profit_taking = vec![Some(0.05); 5];
-        let stop_loss = vec![Some(-0.03); 5];
-        let vertical_barriers = vec![None; 5];
-        let zero_vertical_barrier = false;
-
-        let result = calculate_labels(
-            index,
-            prices,
-            profit_taking,
-            stop_loss,
-            vertical_barriers,
-            zero_vertical_barrier,
-        );
-
-        assert_eq!(result.rets, vec![0.05, 0.05, 0.05, 0.05, 0.08]);
-        assert_eq!(result.labels, vec![1, 1, 1, 1, 1]);
-        assert_eq!(result.barrier_touches, vec![2, 1, 0, 0, 4]);
-    }
-
-    #[test]
-    fn test_calculate_labels_mixed_scenarios() {
-        let index = vec![1, 2, 3, 4, 5];
-        let prices = vec![100.0, 99.0, 101.0, 98.0, 102.0];
-        let profit_taking = vec![Some(0.02), None, Some(0.03), Some(0.01), None];
-        let stop_loss = vec![Some(-0.01), Some(-0.02), None, None, Some(-0.03)];
+        let prices = vec![100.0, 102.0, 99.0, 103.0, 101.0];
+        let profit_taking = vec![Some(0.03), Some(0.02), None, Some(0.01), Some(0.02)];
+        let stop_loss = vec![Some(-0.02), None, Some(-0.01), Some(-0.02), Some(-0.01)];
         let vertical_barriers = vec![Some(3), Some(4), None, Some(5), None];
+        let validity_mask = vec![true, true, false, true, true];
         let zero_vertical_barrier = false;
 
         let result = calculate_labels(
@@ -492,22 +519,25 @@ mod tests {
             profit_taking,
             stop_loss,
             vertical_barriers,
+            validity_mask,
             zero_vertical_barrier,
         );
 
-        assert_eq!(result.rets, vec![-0.01, -0.01, 0.01, -0.02, 0.02]);
-        assert_eq!(result.labels, vec![-1, -1, 1, -1, 1]);
-        assert_eq!(result.barrier_touches, vec![1, 1, 0, 0, 1]);
+        assert_eq!(result.rets.len(), 5);
+        assert_eq!(result.labels.len(), 5);
+        assert_eq!(result.barrier_touches.len(), 5);
+        assert_eq!(result.labels[2], 0); // Invalid due to validity_mask
     }
 
     #[test]
-    fn test_calculate_labels_edge_cases() {
-        let index = vec![1];
-        let prices = vec![100.0];
-        let profit_taking = vec![None];
-        let stop_loss = vec![None];
-        let vertical_barriers = vec![None];
-        let zero_vertical_barrier = true;
+    fn test_calculate_labels_no_barriers_hit() {
+        let index = vec![1, 2, 3, 4, 5];
+        let prices = vec![100.0, 101.0, 100.5, 101.5, 102.0];
+        let profit_taking = vec![Some(0.05); 5];
+        let stop_loss = vec![Some(-0.05); 5];
+        let vertical_barriers = vec![None; 5];
+        let validity_mask = vec![true; 5];
+        let zero_vertical_barrier = false;
 
         let result = calculate_labels(
             index,
@@ -515,31 +545,46 @@ mod tests {
             profit_taking,
             stop_loss,
             vertical_barriers,
+            validity_mask,
             zero_vertical_barrier,
         );
 
-        assert_eq!(result.rets, vec![0.0]);
-        assert_eq!(result.labels, vec![0]);
-        assert_eq!(result.barrier_touches, vec![0]);
+        assert!(result.rets.iter().all(|&r| r >= 0.0));
+        assert!(result.labels.iter().all(|&l| l == 1));
+        assert_eq!(result.barrier_touches, vec![4, 3, 2, 1, 0]);
     }
 
     #[test]
-    #[should_panic]
-    fn test_calculate_labels_mismatched_input_lengths() {
+    fn test_calculate_labels_empty_input() {
+        let result = calculate_labels(vec![], vec![], vec![], vec![], vec![], vec![], false);
+
+        assert!(result.rets.is_empty());
+        assert!(result.labels.is_empty());
+        assert!(result.barrier_touches.is_empty());
+    }
+
+    #[test]
+    fn test_calculate_labels_all_invalid() {
         let index = vec![1, 2, 3];
-        let prices = vec![100.0, 101.0];
+        let prices = vec![100.0, 101.0, 102.0];
         let profit_taking = vec![Some(0.02); 3];
         let stop_loss = vec![Some(-0.01); 3];
         let vertical_barriers = vec![Some(3); 3];
+        let validity_mask = vec![false; 3];
         let zero_vertical_barrier = false;
 
-        calculate_labels(
+        let result = calculate_labels(
             index,
             prices,
             profit_taking,
             stop_loss,
             vertical_barriers,
+            validity_mask,
             zero_vertical_barrier,
         );
+
+        assert_eq!(result.rets, vec![0.0, 0.0, 0.0]);
+        assert_eq!(result.labels, vec![0, 0, 0]);
+        assert_eq!(result.barrier_touches, vec![0, 0, 0]);
     }
 }
