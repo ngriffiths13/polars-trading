@@ -143,13 +143,6 @@ struct TripleBarrierLabels {
 }
 
 impl TripleBarrierLabels {
-    fn new() -> Self {
-        TripleBarrierLabels {
-            rets: Vec::new(),
-            labels: Vec::new(),
-            barrier_touches: Vec::new(),
-        }
-    }
     fn new_with_capacity(capacity: usize) -> Self {
         TripleBarrierLabels {
             rets: Vec::with_capacity(capacity),
@@ -201,9 +194,12 @@ fn calculate_labels(
         println!("{:?}", label);
         labels.rets.push(label.ret);
         labels.labels.push(label.label);
-        labels
-            .barrier_touches
-            .push(label.barrier_touch + barrier_touch_start_idx as i64);
+        labels.barrier_touches.push(
+            index
+                .get(label.barrier_touch as usize + barrier_touch_start_idx)
+                .unwrap()
+                .clone(),
+        );
     }
     labels
 }
@@ -466,7 +462,7 @@ mod tests {
             ]
         );
         assert_eq!(result.labels, vec![1, 1, 1, 1, 1]);
-        assert_eq!(result.barrier_touches, vec![2, 4, 4, 4, 4]);
+        assert_eq!(result.barrier_touches, vec![3, 5, 5, 5, 5]);
     }
 
     #[test]
@@ -500,7 +496,7 @@ mod tests {
             ]
         );
         assert_eq!(result.labels, vec![-1, -1, -1, -1, 0]);
-        assert_eq!(result.barrier_touches, vec![1, 2, 3, 4, 4]);
+        assert_eq!(result.barrier_touches, vec![2, 3, 4, 5, 5]);
     }
 
     #[test]
@@ -551,7 +547,7 @@ mod tests {
 
         assert!(result.rets.iter().all(|&r| r >= 0.0));
         assert!(result.labels.iter().all(|&l| l == 1));
-        assert_eq!(result.barrier_touches, vec![4, 4, 4, 4, 4]);
+        assert_eq!(result.barrier_touches, vec![5, 5, 5, 5, 5]);
     }
 
     #[test]
