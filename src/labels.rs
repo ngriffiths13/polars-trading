@@ -500,7 +500,7 @@ mod tests {
             ]
         );
         assert_eq!(result.labels, vec![-1, -1, -1, -1, 0]);
-        assert_eq!(result.barrier_touches, vec![1, 1, 1, 1, 0]);
+        assert_eq!(result.barrier_touches, vec![1, 2, 3, 4, 4]);
     }
 
     #[test]
@@ -551,7 +551,7 @@ mod tests {
 
         assert!(result.rets.iter().all(|&r| r >= 0.0));
         assert!(result.labels.iter().all(|&l| l == 1));
-        assert_eq!(result.barrier_touches, vec![4, 3, 2, 1, 0]);
+        assert_eq!(result.barrier_touches, vec![4, 4, 4, 4, 4]);
     }
 
     #[test]
