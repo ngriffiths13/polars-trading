@@ -39,7 +39,7 @@ def test__get_weights_ffd__benchmark_pandas(benchmark):
 def test__frac_diff__matches_pandas(trade_data):
     trade_data = trade_data.sort("ts_event")
     out = trade_data.select(
-        "ts_event", "symbol", frac_diff("price", 0.5, 1e-3).alias("frac_diff")
+        "ts_event", "symbol", frac_diff("price", 0.5, 1e-3).over("symbol").alias("frac_diff")
     )
     out2 = pl.DataFrame(apply_pd_frac_diff(trade_data.to_pandas(), 0.5, 1e-3)).rename(
         {"level_1": "ts_event", "price": "frac_diff"}

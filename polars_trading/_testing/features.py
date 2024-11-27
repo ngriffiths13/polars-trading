@@ -48,30 +48,3 @@ def frac_diff_ffd(series: pd.DataFrame, d: float, thresh: float = 1e-5) -> pd.Da
             df_[loc1] = np.dot(w.T, series_f.loc[loc0:loc1])[0, 0]
         df[name] = df_.copy(deep=True)
     return pd.concat(df, axis=1)
-
-
-if __name__ == "__main__":
-    import polars as pl
-
-    from polars_trading._testing.data import generate_trade_data
-    from polars_trading.features.frac_diff import frac_diff
-
-    pl.Config.set_verbose(True)
-    data = generate_trade_data(10_000, n_companies=3).sort("ts_event")
-    print(
-        data.with_columns(
-            frac_diff("price", 0.5, 1e-3).over("symbol").alias("frac_diff")
-        ).sort("symbol")
-    )
-
-    print(
-        pl.from_pandas(
-            data.to_pandas()
-            .set_index("ts_event")
-            .groupby("symbol")[["price"]]
-            .apply(frac_diff_ffd, 0.5, 1e-3),
-            include_index=True,
-        ).sort("symbol")
-    )
-
-    # print(frac_diff_ffd(data.to_pandas().set_index("ts_event")[["price"]], 0.5, 1e-3))

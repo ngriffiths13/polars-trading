@@ -13,4 +13,4 @@ pyo3-polars = { version = "*", features = ["derive", "dtype-struct"] }
 serde = { version = "1", features = ["derive"] }
 polars = { version = "*", features = ["dtype-struct"] }
 num = "0.4.3"
-polars-arrow = "0.44.2"
+polars-arrow = "*"
