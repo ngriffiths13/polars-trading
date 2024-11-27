@@ -1,9 +1,13 @@
-from polars_trading.labels.dynamic_labels import daily_vol, get_vertical_barrier_by_timedelta
+from polars_trading.labels.dynamic_labels import (
+    daily_vol,
+    get_vertical_barrier_by_timedelta,
+)
 import polars as pl
 from polars_trading._testing.labels import get_daily_vol
 import pytest
 from polars.testing import assert_frame_equal
 from datetime import datetime, timedelta
+
 
 @pytest.mark.parametrize(
     "trade_data",
@@ -30,8 +34,9 @@ def test__daily_vol__single_security(trade_data):
 )
 def test__daily_vol__multi_security(trade_data):
     pl_result = (
-        daily_vol(trade_data, "ts_event", "price", "symbol", 5)
-        .sort("ts_event", "symbol")
+        daily_vol(trade_data, "ts_event", "price", "symbol", 5).sort(
+            "ts_event", "symbol"
+        )
     ).drop_nulls()
     pd_result = (
         trade_data.to_pandas()
@@ -163,6 +168,7 @@ def test__get_vertical_barrier_by_timedelta__simple():
     result = get_vertical_barrier_by_timedelta(df.lazy(), "ts_event", "2h").collect()
     assert_frame_equal(result, expected)
 
+
 def test__get_vertical_barrier_by_timedelta__skip_rows():
     df = pl.DataFrame(
         {
@@ -243,7 +249,9 @@ def test__get_vertical_barrier_by_timedelta__timedelta():
     └─────────────────────┴─────────────────────┘
     """)
 
-    result = get_vertical_barrier_by_timedelta(df.lazy(), "ts_event", timedelta(hours=2)).collect()
+    result = get_vertical_barrier_by_timedelta(
+        df.lazy(), "ts_event", timedelta(hours=2)
+    ).collect()
     assert_frame_equal(result, expected)
 
 

@@ -32,27 +32,27 @@ where
     }
 
     // Create ChunkedArrays
-    let id_ca = Int32Chunked::new("bar_group__id", &row_group_ids);
-    let amount_ca = ChunkedArray::<T>::from_slice("bar_group__amount", &row_group_amounts);
+    let id_ca = Int32Chunked::new("bar_group__id".into(), &row_group_ids);
+    let amount_ca = ChunkedArray::<T>::from_slice("bar_group__amount".into(), &row_group_amounts);
+    let length = id_ca.len();
 
     // Create a StructChunked
     let fields = vec![id_ca.into_series(), amount_ca.into_series()];
 
-    StructChunked::from_series("row_groups", &fields)
+    StructChunked::from_series("row_groups".into(), length, fields.iter())
 }
 
 #[derive(Deserialize)]
-struct BarGroupKwargs
-{
+struct BarGroupKwargs {
     bar_size: f64,
 }
 
 fn bar_group_struct(input_fields: &[Field]) -> PolarsResult<Field> {
     Ok(Field::new(
-        input_fields[0].name(),
+        input_fields[0].name().clone(),
         DataType::Struct(vec![
-            Field::new("bar_group__id", DataType::Int32),
-            Field::new("bar_group__amount", input_fields[0].data_type().clone()),
+            Field::new("bar_group__id".into(), DataType::Int32),
+            Field::new("bar_group__amount".into(), input_fields[0].dtype().clone()),
         ]),
     ))
 }

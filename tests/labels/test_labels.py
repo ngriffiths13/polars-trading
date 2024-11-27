@@ -129,4 +129,8 @@ def test__fixed_time_return_classification__expr_threshold():
     indirect=True,
 )
 def test__fixed_time_return_classification__benchmark(trade_data, benchmark):
-    benchmark(trade_data.lazy().select(fixed_time_return_classification("price", 50, 0.2, symbol="symbol")).collect)
+    benchmark(
+        trade_data.lazy()
+        .select(fixed_time_return_classification("price", 50, 0.2, symbol="symbol"))
+        .collect
+    )
