@@ -3,11 +3,40 @@
 import polars as pl
 from polars.plugins import register_plugin_function
 
-from polars_trading._utils import LIB, validate_columns
-from polars_trading.typing import FrameType, IntoExpr
+from polars_trading._utils import LIB, parse_into_expr
+from polars_trading.config import column_names
+from polars_trading.typing import FrameType, IntoExpr, PolarsDataType
 
 
-def _bar_groups_expr(expr: IntoExpr, bar_size: float) -> pl.Expr:
+def _generate_output_schema(symbol_col: str) -> dict[str, PolarsDataType]:
+    """Generate the output schema for the bar groups expression.
+
+    Args:
+    ----
+        symbol_col (str): The name of the symbol column.
+
+    Returns:
+    -------
+        dict[str, PolarsDataType]: The output schema for the bar groups expression.
+
+    """
+    return {
+        symbol_col: pl.String,
+        "ts_event_start": pl.Datetime("ns"),
+        "ts_event_end": pl.Datetime("ns"),
+        "open": pl.Float64,
+        "high": pl.Float64,
+        "low": pl.Float64,
+        "close": pl.Float64,
+        "volume": pl.Int64,
+        "vwap": pl.Float64,
+        "n_trades": pl.UInt32,
+    }
+
+
+def _bar_groups_expr(
+    expr: IntoExpr, bar_size: float, allow_splits: bool = True
+) -> pl.Expr:
     """Generate bar groups for a given expression.
 
     This expression will return a struct column with 2 fields: `id` and `amount`.
@@ -24,6 +53,7 @@ def _bar_groups_expr(expr: IntoExpr, bar_size: float) -> pl.Expr:
     ----
         expr (IntoExpr): The expression to generate bar groups for.
         bar_size (float): The size of the bars to generate.
+        allow_splits (bool): Whether to allow splitting a trade across multiple bars.
 
     Returns:
     -------
@@ -33,36 +63,34 @@ def _bar_groups_expr(expr: IntoExpr, bar_size: float) -> pl.Expr:
     return register_plugin_function(
         plugin_path=LIB,
         args=[expr],
-        kwargs={"bar_size": bar_size},
+        kwargs={"bar_size": bar_size, "allow_splits": allow_splits},
         is_elementwise=False,
         function_name="bar_groups",
     )
 
 
-def _ohlcv_expr(timestamp_col: str, price_col: str, size_col: str) -> list[pl.Expr]:
+def _ohlcv_expr(
+    timestamp_col: IntoExpr, price_col: IntoExpr, size_col: IntoExpr
+) -> list[pl.Expr]:
+    ts_expr = parse_into_expr(timestamp_col)
+    price_expr = parse_into_expr(price_col)
+    size_expr = parse_into_expr(size_col)
     return [
-        pl.first(timestamp_col).name.suffix("_start"),
-        pl.last(timestamp_col).name.suffix("_end"),
-        pl.first(price_col).alias("open"),
-        pl.max(price_col).alias("high"),
-        pl.min(price_col).alias("low"),
-        pl.last(price_col).alias("close"),
-        ((pl.col(size_col) * pl.col(price_col)).sum() / pl.col(size_col).sum()).alias(
-            "vwap"
-        ),
-        pl.sum(size_col).alias("volume"),
+        ts_expr.first().name.suffix("_start"),
+        ts_expr.last().name.suffix("_end"),
+        price_expr.first().alias("open"),
+        price_expr.max().alias("high"),
+        price_expr.min().alias("low"),
+        price_expr.last().alias("close"),
+        ((size_expr * price_expr).sum() / size_expr.sum()).alias("vwap"),
+        size_expr.sum().alias("volume"),
         pl.len().alias("n_trades"),
     ]
 
 
-@validate_columns("timestamp_col", "price_col", "size_col", "symbol_col")
 def time_bars(
     df: FrameType,
     *,
-    timestamp_col: str,
-    price_col: str = "price",
-    size_col: str = "size",
-    symbol_col: str = "symbol",
     bar_size: str = "1m",
 ) -> FrameType:
     """Generate time bars for a given DataFrame.
@@ -70,13 +98,6 @@ def time_bars(
     Args:
     ----
         df (FrameType): The DataFrame/LazyFrame to generate standard bars for.
-        timestamp_col (str): The name of the timestamp column in the DataFrame.
-        price_col (str, optional): The name of the price column in the DataFrame.
-            Defaults to "price".
-        size_col (str, optional): The name of the size column in the DataFrame.
-            Defaults to "size".
-        symbol_col (str, optional): The name of the symbol column in the DataFrame.
-            Defaults to "symbol".
         bar_size (str, optional): The size of the bars to generate.
             Can use any number followed by a time symbol. For example:
 
@@ -88,11 +109,22 @@ def time_bars(
 
             Defaults to "1m".
 
+    Raises:
+    ------
+        ValueError: If the DataFrame does not contain the required columns.
+
     Returns:
     -------
         FrameType: The DataFrame/LazyFrame with time bars.
 
     """
+    timestamp_col = column_names.timestamp
+    price_col = column_names.price
+    size_col = column_names.size
+    symbol_col = column_names.symbol
+
+    output_schema = _generate_output_schema(symbol_col)
+
     return (
         df.drop_nulls(subset=price_col)
         .sort(timestamp_col)
@@ -103,34 +135,24 @@ def time_bars(
         )
         .rename({"__time_group": timestamp_col})
         .sort(f"{timestamp_col}_end")
+        .cast(output_schema)
     )
 
 
-@validate_columns("timestamp_col", "price_col", "size_col", "symbol_col")
 def tick_bars(
     df: FrameType,
     *,
-    timestamp_col: str,
-    price_col: str = "price",
-    size_col: str = "size",
-    symbol_col: str = "symbol",
     bar_size: int = 100,
     split_by_date: bool = True,
 ) -> FrameType:
     """Generate tick bars for a given DataFrame.
 
-    The function takes a DataFrame, a timestamp column, a price column, a size column,
-    a symbol column, and a bar size as input.
-    The bar size is the number of ticks that will be aggregated into a single bar.
-    This function will never overlap bars between different days.
+    The function takes a DataFrame and generates tick bars by grouping a fixed number
+    of ticks into each bar. This function will never overlap bars between different days.
 
     Args:
     ----
         df (FrameType): The DataFrame/LazyFrame to generate tick bars for.
-        timestamp_col (str): The name of the timestamp column in the DataFrame.
-        price_col (str): The name of the price column in the DataFrame.
-        size_col (str): The name of the size column in the DataFrame.
-        symbol_col (str): The name of the symbol column in the DataFrame.
         bar_size (int): The number of ticks to aggregate into a single bar.
         split_by_date (bool): Whether to split bars by date or not.
 
@@ -139,6 +161,13 @@ def tick_bars(
         FrameType: The DataFrame/LazyFrame with tick bars.
 
     """
+    timestamp_col = column_names.timestamp
+    price_col = column_names.price
+    size_col = column_names.size
+    symbol_col = column_names.symbol
+
+    output_schema = _generate_output_schema(symbol_col)
+
     over_cols = [symbol_col]
     ohlcv = df.drop_nulls(subset=price_col).sort(timestamp_col)
     if split_by_date:
@@ -159,101 +188,77 @@ def tick_bars(
     )
     if split_by_date:
         bars = bars.drop("__date")
-    return bars
+    return bars.cast(output_schema)
 
 
-@validate_columns("timestamp_col", "price_col", "size_col", "symbol_col")
 def volume_bars(
     df: FrameType,
     *,
-    timestamp_col: str,
-    price_col: str = "price",
-    size_col: str = "size",
-    symbol_col: str = "symbol",
     bar_size: int = 10_000,
     split_by_date: bool = True,
 ) -> FrameType:
-    """Generate tick bars for a given DataFrame.
+    """Generate volume bars for a given DataFrame.
 
-    The function takes a DataFrame, a timestamp column, a price column, a size column,
-    a symbol column, and a bar size as input.
-    The bar size is the volume that will be aggregated into a single bar.
-    This function will never overlap bars between different days.
+    The function takes a DataFrame and generates volume bars by grouping a fixed volume
+    of trades into each bar. This function will never overlap bars between different
+    days when split_by_date is True.
 
     Args:
     ----
-        df (FrameType): The DataFrame/LazyFrame to generate tick bars for.
-        timestamp_col (str): The name of the timestamp column in the DataFrame.
-        price_col (str): The name of the price column in the DataFrame.
-        size_col (str): The name of the size column in the DataFrame.
-        symbol_col (str): The name of the symbol column in the DataFrame.
+        df (FrameType): The DataFrame/LazyFrame to generate volume bars for.
         bar_size (int): The volume to aggregate into a single bar.
         split_by_date (bool): Whether to split bars by date or not.
 
     Returns:
     -------
-        FrameType: The DataFrame/LazyFrame with tick bars.
+        FrameType: The DataFrame/LazyFrame with volume bars.
 
     """
+    timestamp_col = column_names.timestamp
+    price_col = column_names.price
+    size_col = column_names.size
+    symbol_col = column_names.symbol
+
+    output_schema = _generate_output_schema(symbol_col)
+
     over_cols = [symbol_col]
-    ohlcv = df.drop_nulls(subset=price_col).sort(timestamp_col)
+    bars = df.drop_nulls(subset=price_col).sort(timestamp_col)
     if split_by_date:
-        ohlcv = ohlcv.with_columns(pl.col(timestamp_col).dt.date().alias("__date"))
+        bars = bars.with_columns(pl.col(timestamp_col).dt.date().alias("__date"))
         over_cols.append("__date")
 
-    ohlcv = ohlcv.with_columns(
+    bars = bars.with_columns(
         _bar_groups_expr(size_col, bar_size).over(*over_cols).alias("__bar_groups")
-    ).unnest("__bar_groups")
+    )
 
     bars = (
-        ohlcv.vstack(
-            ohlcv.filter(pl.col(size_col) != pl.col("bar_group__amount")).with_columns(
-                pl.col(size_col)
-                .sub(pl.col("bar_group__amount"))
-                .alias("bar_group__amount"),
-                pl.col("bar_group__id") + 1,
-            )
-        )
-        .select(
-            pl.all().exclude(size_col, "bar_group__amount"),
-            pl.col("bar_group__amount").alias(size_col),
-        )
+        bars.explode("__bar_groups")
+        .unnest("__bar_groups")
         .group_by(*over_cols, "bar_group__id")
-        .agg(_ohlcv_expr(timestamp_col, price_col, size_col))
+        .agg(_ohlcv_expr(timestamp_col, price_col, "bar_group__amount"))
         .drop("bar_group__id")
         .sort(f"{timestamp_col}_end")
     )
     if split_by_date:
         bars = bars.drop("__date")
-    return bars
+    return bars.cast(output_schema)
 
 
-@validate_columns("timestamp_col", "price_col", "size_col", "symbol_col")
 def dollar_bars(
     df: FrameType,
     *,
-    timestamp_col: str,
-    price_col: str = "price",
-    size_col: str = "size",
-    symbol_col: str = "symbol",
-    bar_size: int = 1_000_000,
+    bar_size: float = 1_000_000.0,
     split_by_date: bool = True,
 ) -> FrameType:
-    """Generate tick bars for a given DataFrame.
+    """Generate dollar bars for a given DataFrame.
 
-    The function takes a DataFrame, a timestamp column, a price column, a size column,
-    a symbol column, and a bar size as input.
-    The bar size is the dollar volume that will be aggregated into a single bar.
-    This function will never overlap bars between different days.
+    The function takes a DataFrame and generates dollar bars by grouping a fixed dollar
+    volume of trades into each bar. This function will never overlap bars between different days.
 
     Args:
     ----
-        df (FrameType): The DataFrame/LazyFrame to generate tick bars for.
-        timestamp_col (str): The name of the timestamp column in the DataFrame.
-        price_col (str): The name of the price column in the DataFrame.
-        size_col (str): The name of the size column in the DataFrame.
-        symbol_col (str): The name of the symbol column in the DataFrame.
-        bar_size (int): The dollar volume to aggregate into a single bar.
+        df (FrameType): The DataFrame/LazyFrame to generate dollar bars for.
+        bar_size (float): The dollar volume to aggregate into a single bar.
         split_by_date (bool): Whether to split bars by date or not.
 
     Returns:
@@ -261,50 +266,51 @@ def dollar_bars(
         FrameType: The DataFrame/LazyFrame with dollar bars.
 
     """
+    timestamp_col = column_names.timestamp
+    price_col = column_names.price
+    size_col = column_names.size
+    symbol_col = column_names.symbol
+
+    output_schema: dict[str, PolarsDataType] = {
+        symbol_col: pl.String,
+        "ts_event_start": pl.Datetime("ns"),
+        "ts_event_end": pl.Datetime("ns"),
+        "open": pl.Float64,
+        "high": pl.Float64,
+        "low": pl.Float64,
+        "close": pl.Float64,
+        "volume": pl.Int64,
+        "vwap": pl.Float64,
+        "n_trades": pl.UInt32,
+    }
+
     over_cols = [symbol_col]
-    ohlcv = (
+    bars = (
         df.drop_nulls(subset=price_col)
         .sort(timestamp_col)
-        .with_columns(
-            pl.col(price_col).mul(pl.col(size_col)).alias("__dollar_volume"),
-        )
+        .with_columns(pl.all().repeat_by(size_col))
+        .explode(pl.all())
+        .with_columns(pl.lit(1).alias(size_col))
     )
     if split_by_date:
-        ohlcv = ohlcv.with_columns(pl.col(timestamp_col).dt.date().alias("__date"))
+        bars = bars.with_columns(pl.col(timestamp_col).dt.date().alias("__date"))
         over_cols.append("__date")
 
-    ohlcv = (
-        ohlcv.with_columns(
-            _bar_groups_expr("__dollar_volume", bar_size)
-            .over(*over_cols)
-            .alias("__bar_groups")
-        )
-        .unnest("__bar_groups")
-        .with_columns(
-            pl.col("bar_group__amount")
-            .truediv(pl.col(price_col))
-            .alias("bar_group__amount"),
-        )
+    bars = bars.with_columns(
+        _bar_groups_expr(price_col, bar_size, allow_splits=False)
+        .over(*over_cols)
+        .alias("__bar_groups")
     )
 
     bars = (
-        ohlcv.vstack(
-            ohlcv.filter(pl.col(size_col) != pl.col("bar_group__amount")).with_columns(
-                pl.col(size_col)
-                .sub(pl.col("bar_group__amount"))
-                .alias("bar_group__amount"),
-                pl.col("bar_group__id") + 1,
-            )
-        )
-        .select(
-            pl.all().exclude(size_col, "bar_group__amount"),
-            pl.col("bar_group__amount").alias(size_col),
-        )
+        bars.with_columns(pl.col("__bar_groups").list.first())
+        .unnest("__bar_groups")
+        .group_by(symbol_col, price_col, timestamp_col, "bar_group__id")
+        .agg(pl.first("__date"), pl.col(size_col).sum(), pl.sum("bar_group__amount"))
         .group_by(*over_cols, "bar_group__id")
         .agg(_ohlcv_expr(timestamp_col, price_col, size_col))
         .drop("bar_group__id")
-        .sort(f"{timestamp_col}_end")
     )
     if split_by_date:
         bars = bars.drop("__date")
-    return bars
+    return bars.cast(output_schema)

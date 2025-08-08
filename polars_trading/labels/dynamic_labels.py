@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
-from polars_trading._utils import validate_columns
+from polars_trading.config import column_names
 
 if TYPE_CHECKING:
     from polars_trading.typing import FrameType
@@ -13,57 +13,70 @@ if TYPE_CHECKING:
 
 def daily_vol(
     df: FrameType,
-    timestamp_col: str,
-    price_col: str,
-    symbol_col: str | None = None,
+    *,
     span: int = 100,
 ) -> FrameType:
-    """This function calculates the daily volatility of a price series.
+    """Calculate the daily volatility of a price series.
 
-    It uses an the daily volatiity by looking back at the return from the oldest price
+    Uses the daily volatility by looking back at the return from the oldest price
     in the last 24 hour period to the current price. It then calculates the exponential
     weighted standard deviation of the returns.
 
     This currently fails to account for weekend returns when there is no trading.
 
-    Marco Lopez de Prado, Advances in Financial Machine Learning, pg. 44
+    Reference: Marco Lopez de Prado, Advances in Financial Machine Learning, pg. 44
 
     Args:
     ----
         df (DataFrame): The DataFrame containing the price series.
-        timestamp_col (str): The column name containing the timestamps.
-        price_col (str): The column name containing the prices.
-        symbol_col (str | None): The column name containing the symbols. If None, it is
-            assumed that the prices are for a single symbol. Defaults to None.
         span (int): The span of the exponential weighted standard deviation. Defaults to
             100.
 
     Returns:
+    -------
         FrameType: The DataFrame with the daily volatility.
+
     """
-    on_clause = [timestamp_col] if symbol_col is None else [timestamp_col, symbol_col]
+    timestamp_col = column_names.timestamp
+    price_col = column_names.price
+    symbol_col = column_names.symbol
+
+    # Check if symbol column exists to determine if we're dealing with multi-symbol data
+    has_symbol = symbol_col in df.columns
+
+    on_clause = [timestamp_col] if not has_symbol else [timestamp_col, symbol_col]
     df = df.sort(timestamp_col)
     lagged_prices = df.select(
         *on_clause,
         (pl.col(timestamp_col) - timedelta(hours=24)).alias("lookback"),
-    ).join_asof(df, left_on="lookback", right_on=timestamp_col, by=symbol_col)
+    ).join_asof(
+        df,
+        left_on="lookback",
+        right_on=timestamp_col,
+        by=symbol_col if has_symbol else None,
+    )
     returns = df.join(
         lagged_prices.select(*on_clause, pl.col(price_col).alias("lookback_price")),
         on=on_clause,
     ).with_columns(pl.col(price_col).truediv("lookback_price").sub(1).alias("return"))
-    vol_expr = (
-        pl.col("return")
-        .ewm_std(span=span)
-        .over(symbol_col)
-        .alias("daily_return_volatility")
-    )
+
+    if has_symbol:
+        vol_expr = (
+            pl.col("return")
+            .ewm_std(span=span)
+            .over(symbol_col)
+            .alias("daily_return_volatility")
+        )
+    else:
+        vol_expr = pl.col("return").ewm_std(span=span).alias("daily_return_volatility")
+
     return_cols = (
         [
             timestamp_col,
             symbol_col,
             vol_expr,
         ]
-        if symbol_col
+        if has_symbol
         else [
             timestamp_col,
             vol_expr,
@@ -75,9 +88,7 @@ def daily_vol(
 
 def get_vertical_barrier_by_timedelta(
     df: FrameType,
-    timestamp_col: str,
     offset: str | timedelta,
-    symbol_col: str | None = None,
 ) -> FrameType:
     """Create a vertical barrier column.
 
@@ -94,28 +105,31 @@ def get_vertical_barrier_by_timedelta(
     Args:
     ----
         df (DataFrame): The DataFrame containing the price series.
-        timestamp_col (str): The column name containing the timestamps.
         offset (str | timedelta): A string denoting the offset or a timedelta object.
             If a string is passed, it should follow common polars formatting.
-        symbol_col (str | None): The column name containing the symbols. If None, it is
-            assumed that the prices are for a single symbol. Defaults to None.
-        span (int): The span of the exponential weighted standard deviation. Defaults to
-            100.
 
     Returns:
+    -------
         FrameType: The DataFrame with the vertical barrier.
+
     """
+    timestamp_col = column_names.timestamp
+    symbol_col = column_names.symbol
+
+    # Check if symbol column exists to determine if we're dealing with multi-symbol data
+    has_symbol = symbol_col in df.columns
+
     if isinstance(offset, str):
         offset_expr = pl.col(timestamp_col).dt.offset_by(offset)
     elif isinstance(offset, timedelta):
         offset_expr = pl.col(timestamp_col) + offset
 
-    if symbol_col is None:
+    if not has_symbol:
         offsets = df.select(timestamp_col, offset_expr.alias("offset"))
     else:
         offsets = df.select(symbol_col, timestamp_col, offset_expr.alias("offset"))
 
-    if symbol_col is None:
+    if not has_symbol:
         return offsets.join_asof(
             df.select(pl.col(timestamp_col).alias("vertical_barrier")),
             left_on="offset",
@@ -131,11 +145,9 @@ def get_vertical_barrier_by_timedelta(
     ).select(symbol_col, timestamp_col, "vertical_barrier")
 
 
-@validate_columns("timestamp_col", "price_col", "target_col")
 def apply_profit_taking_stop_loss(
     df: FrameType,
     timestamp_col: str,
-    price_col: str,  # noqa: ARG001
     target_col: str,
     vertical_barrier_col: str | None,
     profit_take: float | None = None,

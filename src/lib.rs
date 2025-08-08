@@ -1,12 +1,10 @@
-use pyo3::types::{PyModule, PyModuleMethods};
-use pyo3::{pymodule, Bound, PyResult};
-use pyo3_polars::PolarsAllocator;
-
 mod bars;
 mod labels;
 
+use pyo3::prelude::*;
+
 #[pymodule]
-fn _internal(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _internal(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }
