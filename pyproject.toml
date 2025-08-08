@@ -1,24 +1,28 @@
 [build-system]
-requires = ["maturin>=1.0,<2.0", "polars>=1.3.0"]
+requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [project]
 name = "polars-trading"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
-dependencies = ["polars[plot]>=1.3"]
+dependencies = ["polars[plot]>=1.13"]
+version = "0.1.0"
 
 
 [tool.ruff.format]
 docstring-code-format = true
 
 [tool.ruff]
-lint.select = ["ALL"]
-lint.ignore = [
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
     'A003',
     'ANN401',
     'ARG002',  # todo: enable
@@ -34,7 +38,7 @@ lint.ignore = [
     'D212',
     'DTZ',
     'E501',
-    'FBT003',  # todo: enable
+    'FBT',
     'FIX',
     'ISC001',
     'PD',
@@ -51,10 +55,11 @@ lint.ignore = [
     'SLF001',
     'TD',
     'TRY004',
+    'UP',
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
-lint.fixable = ["ALL"]
+fixable = ["ALL"]
 
 # Exclude a variety of commonly ignored directories.
 exclude = [
@@ -67,7 +72,6 @@ exclude = [
     ".ipynb",
     "venv",
 ]
-line-length = 88
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
@@ -110,15 +114,15 @@ update_changelog_on_bump = true
 major_version_zero = true
 
 [tool.pytest.ini_options]
-markers = ["pandas"]
+markers = ["pandas", "benchmark"]
+python_files = ["test_*.py", "benchmark_*.py"]
 addopts = [
-    "--benchmark-disable",
     "--benchmark-columns=min,mean,median,max,stddev",
-    "-m not pandas",
     "--cov=polars_trading",
     "--cov-report=term-missing",
     "--cov-fail-under=80",
     "--cov-config=pyproject.toml",
+    "-m not (pandas or benchmark)",
 ]
 [tool.coverage.run]
 omit = ["polars_trading/_testing/*"]

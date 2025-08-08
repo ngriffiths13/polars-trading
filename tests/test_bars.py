@@ -1,63 +1,16 @@
-import pandas as pd
+import datetime as dt
+
 import polars as pl
 import pytest
-from datetime import datetime
 from polars.testing import assert_frame_equal
 
-from polars_trading.bars import time_bars, tick_bars, volume_bars, dollar_bars
-from polars_trading._testing.data import generate_trade_data
-
-
-def pandas_time_bars(df: pd.DataFrame, period: str) -> pd.DataFrame:
-    df.index = pd.to_datetime(df["ts_event"])
-    df["pvt"] = df["price"] * df["size"]
-    df = df.sort_index()
-    resampled_df = (
-        df.groupby([df.index.to_period(period), "symbol"])
-        .agg(
-            ts_event_start=pd.NamedAgg(column="ts_event", aggfunc="first"),
-            ts_event_end=pd.NamedAgg(column="ts_event", aggfunc="last"),
-            n_trades=pd.NamedAgg(column="ts_event", aggfunc="count"),
-            open=pd.NamedAgg(column="price", aggfunc="first"),
-            high=pd.NamedAgg(column="price", aggfunc="max"),
-            low=pd.NamedAgg(column="price", aggfunc="min"),
-            close=pd.NamedAgg(column="price", aggfunc="last"),
-            volume=pd.NamedAgg(column="size", aggfunc="sum"),
-            vwap=pd.NamedAgg(column="pvt", aggfunc="sum"),
-        )
-        .reset_index("symbol")
-    )
-    resampled_df.index.names = ["ts_event"]
-    resampled_df["vwap"] = resampled_df["vwap"] / resampled_df["volume"]
-    return resampled_df
-
-
-def pandas_tick_bars(df: pd.DataFrame, n_ticks: int) -> pd.DataFrame:
-    df["ts_event"] = pd.to_datetime(df["ts_event"])
-    df = df.sort_values("ts_event")
-    df["pvt"] = df["price"] * df["size"]
-    df["date"] = pd.to_datetime(df["ts_event"]).dt.date
-    df["tick_group"] = (df.groupby(["symbol", "date"]).cumcount() // n_ticks).astype(
-        int
-    )
-    resampled_df = (
-        df.groupby(["date", "tick_group", "symbol"])
-        .agg(
-            ts_event_start=pd.NamedAgg(column="ts_event", aggfunc="first"),
-            ts_event_end=pd.NamedAgg(column="ts_event", aggfunc="last"),
-            n_trades=pd.NamedAgg(column="ts_event", aggfunc="count"),
-            open=pd.NamedAgg(column="price", aggfunc="first"),
-            high=pd.NamedAgg(column="price", aggfunc="max"),
-            low=pd.NamedAgg(column="price", aggfunc="min"),
-            close=pd.NamedAgg(column="price", aggfunc="last"),
-            volume=pd.NamedAgg(column="size", aggfunc="sum"),
-            vwap=pd.NamedAgg(column="pvt", aggfunc="sum"),
-        )
-        .reset_index()
-        .drop(["date", "tick_group"], axis=1)
-    )
-    resampled_df["vwap"] = resampled_df["vwap"] / resampled_df["volume"]
-    return resampled_df
+from polars_trading.bars import dollar_bars, tick_bars, time_bars, volume_bars
+from polars_trading.config import Config
+from tests.testing_utils.pd_bars_helpers import (
+    pandas_tick_bars,
+    pandas_time_bars,
+    pandas_volume_bars,
+)
 
 
 @pytest.mark.parametrize(
@@ -67,7 +20,10 @@ def test__time_bars__matches_pandas(trade_data):
     pd_df = pandas_time_bars(trade_data.to_pandas(), "1d")
     pd_df.index = pd_df.index.to_timestamp()
     pd_df = pd_df.reset_index()
-    res = time_bars(trade_data, timestamp_col="ts_event", bar_size="1d")
+
+    # Configure the column names to match test data
+    with Config(timestamp_column="ts_event"):
+        res = time_bars(trade_data, bar_size="1d")
 
     assert_frame_equal(
         res,
@@ -75,32 +31,6 @@ def test__time_bars__matches_pandas(trade_data):
         check_row_order=False,
         check_column_order=False,
     )
-
-
-@pytest.mark.benchmark(group="time_bars")
-@pytest.mark.parametrize(
-    "trade_data",
-    [
-        {"n_rows": 10_000, "n_companies": 3},
-    ],
-    indirect=True,
-)
-def test__time_bars__polars_benchmark(benchmark, trade_data):
-    benchmark(time_bars, trade_data, timestamp_col="ts_event", bar_size="1d")
-
-
-@pytest.mark.pandas
-@pytest.mark.benchmark(group="time_bars")
-@pytest.mark.parametrize(
-    "trade_data",
-    [
-        {"n_rows": 10_000, "n_companies": 3},
-    ],
-    indirect=True,
-)
-def test__time_bars__pandas_benchmark(benchmark, trade_data):
-    trade_data = trade_data.to_pandas()
-    benchmark(pandas_time_bars, trade_data, "1d")
 
 
 @pytest.mark.parametrize(
@@ -108,7 +38,10 @@ def test__time_bars__pandas_benchmark(benchmark, trade_data):
 )
 def test__tick_bars__matches_pandas(trade_data):
     pd_df = pandas_tick_bars(trade_data.to_pandas(), 100)
-    res = tick_bars(trade_data, timestamp_col="ts_event", bar_size=100)
+
+    # Configure the column names to match test data
+    with Config(timestamp_column="ts_event"):
+        res = tick_bars(trade_data, bar_size=100)
 
     assert_frame_equal(
         res,
@@ -118,51 +51,104 @@ def test__tick_bars__matches_pandas(trade_data):
     )
 
 
-@pytest.mark.benchmark(group="tick_bars")
 @pytest.mark.parametrize(
-    "trade_data",
-    [
-        {"n_rows": 10_000, "n_companies": 3},
-    ],
-    indirect=True,
+    "trade_data", [{"n_rows": 100, "n_companies": 3}], indirect=True
 )
-def test__tick_bars__polars_benchmark(benchmark, trade_data):
-    benchmark(tick_bars, trade_data, timestamp_col="ts_event", bar_size=100)
+def test__volume_bars__matches_pandas(trade_data):
+    """Test that polars volume_bars matches pandas implementation for small datasets."""
+    pd_df = pandas_volume_bars(
+        trade_data.to_pandas(), volume_threshold=50_000, split_by_date=True
+    )
+
+    # Configure the column names to match test data
+    with Config(timestamp_column="ts_event"):
+        res = volume_bars(trade_data, bar_size=50_000, split_by_date=True)
+
+    # Convert pandas result to polars for comparison
+    pd_polars = pl.from_pandas(pd_df, schema_overrides=res.schema)
+
+    assert_frame_equal(
+        res,
+        pd_polars,
+        check_row_order=False,
+        check_column_order=False,
+    )
 
 
-@pytest.mark.pandas
-@pytest.mark.benchmark(group="tick_bars")
-@pytest.mark.parametrize(
-    "trade_data",
-    [
-        {"n_rows": 10_000, "n_companies": 3},
-    ],
-    indirect=True,
-)
-def test__tick_bars__pandas_benchmark(benchmark, trade_data):
-    trade_data = trade_data.to_pandas()
-    benchmark(pandas_tick_bars, trade_data, 100)
+def test__volume_bars__overflow_trade():
+    """Test volume bars with overflow trade."""
+    df = pl.DataFrame(
+        [{"symbol": "A", "price": 3.0, "size": 8, "ts_event": dt.datetime(2021, 1, 1)}]
+    )
+    vol_bars = volume_bars(df, bar_size=5)
+    expected = pl.DataFrame(
+        [
+            {
+                "symbol": "A",
+                "ts_event_start": dt.datetime(2021, 1, 1),
+                "ts_event_end": dt.datetime(2021, 1, 1),
+                "open": 3.0,
+                "high": 3.0,
+                "low": 3.0,
+                "close": 3.0,
+                "vwap": 3.0,
+                "volume": 3,
+                "n_trades": 1,
+            },
+            {
+                "symbol": "A",
+                "ts_event_start": dt.datetime(2021, 1, 1),
+                "ts_event_end": dt.datetime(2021, 1, 1),
+                "open": 3.0,
+                "high": 3.0,
+                "low": 3.0,
+                "close": 3.0,
+                "vwap": 3.0,
+                "volume": 5,
+                "n_trades": 1,
+            },
+        ],
+        schema_overrides={"n_trades": pl.UInt32},
+    )
+    assert_frame_equal(vol_bars, expected, check_row_order=False, check_dtypes=False)
 
 
-@pytest.mark.benchmark(group="volume_bars")
-@pytest.mark.parametrize(
-    "trade_data",
-    [
-        {"n_rows": 10_000, "n_companies": 3},
-    ],
-    indirect=True,
-)
-def test__volume_bars__polars_benchmark(benchmark, trade_data):
-    benchmark(volume_bars, trade_data, timestamp_col="ts_event", bar_size=10_000)
-
-
-@pytest.mark.benchmark(group="dollar_bars")
-@pytest.mark.parametrize(
-    "trade_data",
-    [
-        {"n_rows": 10_000, "n_companies": 3},
-    ],
-    indirect=True,
-)
-def test__dollar_bars__polars_benchmark(benchmark, trade_data):
-    benchmark(dollar_bars, trade_data, timestamp_col="ts_event", bar_size=100_000)
+def test__dollar_volume_bars__overflow_trade():
+    """Test volume bars with overflow trade."""
+    df = pl.DataFrame(
+        [{"symbol": "A", "price": 3.0, "size": 8, "ts_event": dt.datetime(2021, 1, 1)}]
+    )
+    # FIXME
+    # I might need to explode this so each share gets its own row. Otherwise the rust side needs more info
+    # I also need to handle the rust side by having a flag either allowing splits or not.
+    bars = dollar_bars(df, bar_size=13.0)
+    expected = pl.DataFrame(
+        [
+            {
+                "symbol": "A",
+                "ts_event_start": dt.datetime(2021, 1, 1),
+                "ts_event_end": dt.datetime(2021, 1, 1),
+                "open": 3.0,
+                "high": 3.0,
+                "low": 3.0,
+                "close": 3.0,
+                "vwap": 3.0,
+                "volume": 3,
+                "n_trades": 1,
+            },
+            {
+                "symbol": "A",
+                "ts_event_start": dt.datetime(2021, 1, 1),
+                "ts_event_end": dt.datetime(2021, 1, 1),
+                "open": 3.0,
+                "high": 3.0,
+                "low": 3.0,
+                "close": 3.0,
+                "vwap": 3.0,
+                "volume": 5,
+                "n_trades": 1,
+            },
+        ],
+        schema_overrides={"n_trades": pl.UInt32},
+    )
+    assert_frame_equal(bars, expected, check_row_order=False, check_dtypes=False)

@@ -1,10 +1,10 @@
+import polars as pl
+from polars.testing import assert_series_equal
+
 from polars_trading.labels.labels import (
     fixed_time_return,
     fixed_time_return_classification,
 )
-import polars as pl
-from polars.testing import assert_series_equal
-import pytest
 
 
 def test__fixed_time_return__single_security():
@@ -117,20 +117,4 @@ def test__fixed_time_return_classification__expr_threshold():
         result["label"],
         pl.Series(values=[0, 1, 1, None, None], dtype=pl.Int32),
         check_names=False,
-    )
-
-
-@pytest.mark.benchmark
-@pytest.mark.parametrize(
-    "trade_data",
-    [
-        {"n_rows": 100_000, "n_companies": 5},
-    ],
-    indirect=True,
-)
-def test__fixed_time_return_classification__benchmark(trade_data, benchmark):
-    benchmark(
-        trade_data.lazy()
-        .select(fixed_time_return_classification("price", 50, 0.2, symbol="symbol"))
-        .collect
     )

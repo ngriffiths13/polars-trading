@@ -1,12 +1,15 @@
+from datetime import datetime, timedelta
+
+import polars as pl
+import pytest
+from polars.testing import assert_frame_equal
+
+from polars_trading._testing.labels import get_daily_vol
+from polars_trading.config import Config
 from polars_trading.labels.dynamic_labels import (
     daily_vol,
     get_vertical_barrier_by_timedelta,
 )
-import polars as pl
-from polars_trading._testing.labels import get_daily_vol
-import pytest
-from polars.testing import assert_frame_equal
-from datetime import datetime, timedelta
 
 
 @pytest.mark.parametrize(
@@ -17,7 +20,11 @@ from datetime import datetime, timedelta
     indirect=True,
 )
 def test__daily_vol__single_security(trade_data):
-    pl_result = daily_vol(trade_data.lazy(), "ts_event", "price", None, 5).collect()
+    # For single security test, remove the symbol column from test data
+    single_security_data = trade_data.drop("symbol")
+
+    with Config(timestamp_column="ts_event"):
+        pl_result = daily_vol(single_security_data.lazy(), span=5).collect()
     pd_result = get_daily_vol(trade_data.to_pandas().set_index("ts_event")["price"], 5)
     pd_result = pl.from_pandas(pd_result.reset_index()).rename(
         {"price": "daily_return_volatility"}
@@ -33,11 +40,12 @@ def test__daily_vol__single_security(trade_data):
     indirect=True,
 )
 def test__daily_vol__multi_security(trade_data):
-    pl_result = (
-        daily_vol(trade_data, "ts_event", "price", "symbol", 5).sort(
-            "ts_event", "symbol"
-        )
-    ).drop_nulls()
+    with Config(timestamp_column="ts_event"):
+        pl_result = (
+            daily_vol(trade_data, span=5).sort(
+                Config.get("timestamp_column"), Config.get("symbol_column")
+            )
+        ).drop_nulls()
     pd_result = (
         trade_data.to_pandas()
         .set_index("ts_event")[["symbol", "price"]]
@@ -52,36 +60,6 @@ def test__daily_vol__multi_security(trade_data):
     assert_frame_equal(
         pl_result, pd_result, check_row_order=False, check_column_order=False
     )
-
-
-@pytest.mark.benchmark(group="daily_vol")
-@pytest.mark.parametrize(
-    "trade_data",
-    [
-        {"n_rows": 100_000, "n_companies": 5},
-    ],
-    indirect=True,
-)
-def test__daily_vol__polars_benchmark(benchmark, trade_data):
-    benchmark(daily_vol(trade_data.lazy(), "ts_event", "price", "symbol", 100).collect)
-
-
-@pytest.mark.pandas
-@pytest.mark.benchmark(group="daily_vol")
-@pytest.mark.parametrize(
-    "trade_data",
-    [
-        {"n_rows": 100_000, "n_companies": 5},
-    ],
-    indirect=True,
-)
-def test__daily_vol__pandas_benchmark(benchmark, trade_data):
-    pd_df = trade_data.to_pandas().set_index("ts_event")[["symbol", "price"]]
-
-    def get_daily_vol_pd(pd_df):
-        return pd_df.groupby("symbol")["price"].apply(get_daily_vol).reset_index()
-
-    benchmark(get_daily_vol_pd, pd_df)
 
 
 def test__daily_vol__weekend_returns():
@@ -123,7 +101,8 @@ def test__daily_vol__weekend_returns():
     └─────────────────────┴─────────────────────────┘
     """)
 
-    result = daily_vol(df.lazy(), "ts_event", "price", None, 3).collect()
+    with Config(timestamp_column="ts_event"):
+        result = daily_vol(df.lazy(), span=3).collect()
     assert_frame_equal(result, expected)
 
 
@@ -165,7 +144,8 @@ def test__get_vertical_barrier_by_timedelta__simple():
     └─────────────────────┴─────────────────────┘
     """)
 
-    result = get_vertical_barrier_by_timedelta(df.lazy(), "ts_event", "2h").collect()
+    with Config(timestamp_column="ts_event"):
+        result = get_vertical_barrier_by_timedelta(df.lazy(), "2h").collect()
     assert_frame_equal(result, expected)
 
 
@@ -207,7 +187,8 @@ def test__get_vertical_barrier_by_timedelta__skip_rows():
     └─────────────────────┴─────────────────────┘
     """)
 
-    result = get_vertical_barrier_by_timedelta(df.lazy(), "ts_event", "3h").collect()
+    with Config(timestamp_column="ts_event"):
+        result = get_vertical_barrier_by_timedelta(df.lazy(), "3h").collect()
     assert_frame_equal(result, expected)
 
 
@@ -249,19 +230,8 @@ def test__get_vertical_barrier_by_timedelta__timedelta():
     └─────────────────────┴─────────────────────┘
     """)
 
-    result = get_vertical_barrier_by_timedelta(
-        df.lazy(), "ts_event", timedelta(hours=2)
-    ).collect()
+    with Config(timestamp_column="ts_event"):
+        result = get_vertical_barrier_by_timedelta(
+            df.lazy(), timedelta(hours=2)
+        ).collect()
     assert_frame_equal(result, expected)
-
-
-@pytest.mark.benchmark(group="vertical_barrier")
-@pytest.mark.parametrize(
-    "trade_data",
-    [
-        {"n_rows": 100_000, "n_companies": 5},
-    ],
-    indirect=True,
-)
-def test__get_vertical_barrier_by_timedelta__benchmark(benchmark, trade_data):
-    benchmark(get_vertical_barrier_by_timedelta, trade_data, "ts_event", "1h", "symbol")

@@ -1,76 +1,104 @@
-from polars_trading._utils import validate_columns
-import pytest
 import polars as pl
 
-
-@pytest.mark.benchmark
-def test__validate_columns__valid():
-    @validate_columns("timestamp_col", "price_col", "size_col", "symbol_col")
-    def dummy_func(df, **kwargs):
-        return df
-
-    df = pl.DataFrame(
-        {
-            "ts": [1, 2, 3],
-            "p": [1.0, 2.0, 3.0],
-            "s": [1, 2, 3],
-            "sy": ["A", "B", "C"],
-        }
-    )
-
-    dummy_func(df, timestamp_col="ts", price_col="p", size_col="s", symbol_col="sy")
+from polars_trading._utils import parse_into_expr
 
 
-@pytest.mark.benchmark
-def test__validate_columns__invalid():
-    @validate_columns("timestamp_col", "price_col", "size_col", "symbol_col")
-    def dummy_func(df, **kwargs):
-        return df
+def test__parse_into_expr__expr_input():
+    """Test parse_into_expr with pl.Expr input returns expression unchanged."""
+    expr = pl.col("test")
+    result = parse_into_expr(expr)
 
-    df = pl.DataFrame(
-        {
-            "ts": [1, 2, 3],
-            "p": [1.0, 2.0, 3.0],
-            "s": [1, 2, 3],
-            "sy": ["A", "B", "C"],
-        }
-    )
-
-    with pytest.raises(ValueError):
-        dummy_func(
-            df, timestamp_col="ts", price_col="pr", size_col="s", symbol_col="sy"
-        )
+    assert result is expr  # Should return the same object
 
 
-@pytest.mark.benchmark
-def test__validate_columns__df_not_passed():
-    @validate_columns("timestamp_col", "price_col", "size_col", "symbol_col")
-    def dummy_func(df, **kwargs):
-        return df
+def test__parse_into_expr__string_as_column():
+    """Test parse_into_expr with string input as column reference (default behavior)."""
+    result = parse_into_expr("column_name")
+    expected = pl.col("column_name")
 
-    df = {
-        "ts": [1, 2, 3],
-        "p": [1.0, 2.0, 3.0],
-        "s": [1, 2, 3],
-        "sy": ["A", "B", "C"],
-    }
-
-    with pytest.raises(TypeError):
-        dummy_func(df, timestamp_col="ts", price_col="p", size_col="s", symbol_col="sy")
+    # Test by evaluating in a dataframe context
+    df = pl.DataFrame({"column_name": [1, 2, 3]})
+    assert df.select(result).equals(df.select(expected))
 
 
-@pytest.mark.benchmark
-def test__validate_columns__default_args():
-    @validate_columns("timestamp_col", "price_col", "size_col", "symbol_col")
-    def dummy_func(df, timestamp_col="ts", **kwargs):
-        return df
+def test__parse_into_expr__string_as_literal():
+    """Test parse_into_expr with string input as literal when str_as_lit=True."""
+    result = parse_into_expr("test_value", str_as_lit=True)
+    expected = pl.lit("test_value")
 
-    df = pl.DataFrame(
-        {
-            "ts": [1, 2, 3],
-            "p": [1.0, 2.0, 3.0],
-            "s": [1, 2, 3],
-            "sy": ["A", "B", "C"],
-        }
-    )
-    dummy_func(df, price_col="p", size_col="s", symbol_col="sy")
+    # Test by evaluating in a dataframe context
+    df = pl.DataFrame({"dummy": [1]})
+    assert df.select(result).equals(df.select(expected))
+
+
+def test__parse_into_expr__list_as_literal():
+    """Test parse_into_expr with list input as literal (default behavior)."""
+    test_list = [1, 2, 3]
+    result = parse_into_expr(test_list)
+    expected = pl.lit(test_list)
+
+    # Test by evaluating in a dataframe context
+    df = pl.DataFrame({"dummy": [1]})
+    assert df.select(result).equals(df.select(expected))
+
+
+def test__parse_into_expr__list_as_series():
+    """Test parse_into_expr with list input as Series literal when list_as_lit=False."""
+    test_list = [1, 2, 3]
+    result = parse_into_expr(test_list, list_as_lit=False)
+    expected = pl.lit(pl.Series(test_list))
+
+    # Test by evaluating in a dataframe context
+    df = pl.DataFrame({"dummy": [1]})
+    assert df.select(result).equals(df.select(expected))
+
+
+def test__parse_into_expr__list_as_series_with_dtype():
+    """Test parse_into_expr with list input as Series with specific dtype."""
+    test_list = [1, 2, 3]
+    result = parse_into_expr(test_list, list_as_lit=False, dtype=pl.Int32)
+    expected = pl.lit(pl.Series(test_list), dtype=pl.Int32)
+
+    # Test by evaluating in a dataframe context
+    df = pl.DataFrame({"dummy": [1]})
+    assert df.select(result).equals(df.select(expected))
+
+
+def test__parse_into_expr__numeric_literal():
+    """Test parse_into_expr with numeric input as literal."""
+    result = parse_into_expr(42)
+    expected = pl.lit(42)
+
+    # Test by evaluating in a dataframe context
+    df = pl.DataFrame({"dummy": [1]})
+    assert df.select(result).equals(df.select(expected))
+
+
+def test__parse_into_expr__numeric_literal_with_dtype():
+    """Test parse_into_expr with numeric input and specific dtype."""
+    result = parse_into_expr(42, dtype=pl.Float64)
+    expected = pl.lit(42, dtype=pl.Float64)
+
+    # Test by evaluating in a dataframe context
+    df = pl.DataFrame({"dummy": [1]})
+    assert df.select(result).equals(df.select(expected))
+
+
+def test__parse_into_expr__boolean_literal():
+    """Test parse_into_expr with boolean input as literal."""
+    result = parse_into_expr(True)
+    expected = pl.lit(True)
+
+    # Test by evaluating in a dataframe context
+    df = pl.DataFrame({"dummy": [1]})
+    assert df.select(result).equals(df.select(expected))
+
+
+def test__parse_into_expr__none_literal():
+    """Test parse_into_expr with None input as literal."""
+    result = parse_into_expr(None)
+    expected = pl.lit(None)
+
+    # Test by evaluating in a dataframe context
+    df = pl.DataFrame({"dummy": [1]})
+    assert df.select(result).equals(df.select(expected))
