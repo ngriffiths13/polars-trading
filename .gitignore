@@ -16,9 +16,3 @@ scratchpad.py
 .coverage*
 .codspeed
 .cargo
-<<<<<<< HEAD
-=======
-.benchmarks
-__marimo__
-.ropeproject
->>>>>>> 99383f5948884c3484210a6e5f17c3109aa04c54
