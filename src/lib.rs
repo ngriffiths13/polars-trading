@@ -2,6 +2,7 @@ mod bars;
 mod frac_diff;
 mod labels;
 mod noop;
+mod black_scholes;
 
 use pyo3::prelude::*;
 

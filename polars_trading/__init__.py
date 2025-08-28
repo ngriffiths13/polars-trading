@@ -6,12 +6,13 @@ from polars_trading.config import (
     Config,
     column_names,
 )
-from polars_trading.options import noop
+from polars_trading.options import noop, black_scholes
 
 __all__ = [
     "Config",
     "__version__",
     "column_names",
     "time_bars",
-    "noop"
+    "noop",
+    "black_scholes"
 ]
