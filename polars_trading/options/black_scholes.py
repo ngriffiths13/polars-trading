@@ -5,7 +5,14 @@ from polars.plugins import register_plugin_function
 from polars_trading._utils import LIB
 
 
-def black_scholes(s: IntoExprColumn, k: IntoExprColumn, t: IntoExprColumn, sigma: IntoExprColumn, r: IntoExprColumn, type_: IntoExprColumn) -> pl.Expr:
+def black_scholes(
+    s: IntoExprColumn,
+    k: IntoExprColumn,
+    t: IntoExprColumn,
+    sigma: IntoExprColumn,
+    r: IntoExprColumn,
+    type_: IntoExprColumn,
+) -> pl.Expr:
     """Calculate the Black-Scholes option price for calls and puts.
 
     Args:

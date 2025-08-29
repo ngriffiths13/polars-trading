@@ -41,7 +41,7 @@ pub fn _black_scholes(s: f64, k: f64, r: f64, sigma: f64, t: f64, type_: &str) -
         "call" => Some(call),
         "put"  => Some(put),
         _      => None,
-    };  
+    };
 }
 
 
