@@ -1,6 +1,7 @@
 mod bars;
 mod frac_diff;
 mod labels;
+mod black_scholes;
 
 use pyo3::prelude::*;
 

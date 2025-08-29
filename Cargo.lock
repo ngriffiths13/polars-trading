@@ -1897,6 +1897,7 @@ dependencies = [
 name = "polars-trading"
 version = "0.2.0"
 dependencies = [
+ "libm",
  "num",
  "polars",
  "polars-arrow",

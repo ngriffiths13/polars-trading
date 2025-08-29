@@ -6,10 +6,6 @@ from polars_trading.config import (
     Config,
     column_names,
 )
+from polars_trading.options import black_scholes
 
-__all__ = [
-    "Config",
-    "__version__",
-    "column_names",
-    "time_bars",
-]
+__all__ = ["Config", "__version__", "black_scholes", "column_names", "time_bars"]
