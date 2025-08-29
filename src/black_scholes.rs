@@ -1,25 +1,11 @@
 use polars::prelude::*;
 use pyo3_polars::derive::polars_expr;
+use libm;
 
-/// Standard normal cumulative distribution function using
-/// the Abramowitz & Stegun approximation (good accuracy for most uses).
+
 fn norm_cdf(x: f64) -> f64 {
-    // constants
-    let a1 =  0.254829592;
-    let a2 = -0.284496736;
-    let a3 =  1.421413741;
-    let a4 = -1.453152027;
-    let a5 =  1.061405429;
-    let p  =  0.3275911;
-
-    let sign = if x < 0.0 { -1.0 } else { 1.0 };
-    let x = x.abs() / (2.0f64).sqrt();
-
-    // Abramowitz & Stegun formula
-    let t = 1.0 / (1.0 + p * x);
-    let y = 1.0 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * (-x * x).exp();
-
-    0.5 * (1.0 + sign * y)
+    const SQRT_2: f64 = 1.4142135623730951;
+    0.5 * (1.0 + libm::erf(x / SQRT_2))
 }
 
 /// Compute Black–Scholes European call & put prices.
@@ -37,30 +23,6 @@ fn norm_cdf(x: f64) -> f64 {
 /// - If time_to_expiry == 0: returns intrinsic values
 /// - If sigma == 0: treat as deterministic forward (discounted intrinsic)
 pub fn _black_scholes(s: f64, k: f64, r: f64, sigma: f64, t: f64, type_: &str) -> Option<f64> {
-    // quick checks for invalid/degenerate inputs
-    if t <= 0.0 {
-        let call = f64::max(s - k, 0.0);
-        let put  = f64::max(k - s, 0.0);
-        return match type_ {
-            "call" => Some(call),
-            "put"  => Some(put),
-            _      => None,
-        };    
-    }
-
-    if sigma <= 0.0 {
-        // No volatility -> option value is discounted intrinsic based on forward price
-        let fwd = s * (r * t).exp();
-        let call = ((fwd - k).max(0.0)) * (-r * t).exp(); // discount back
-        let put  = ((k - fwd).max(0.0)) * (-r * t).exp();
-        // return BlackScholes { call, put };
-        return match type_ {
-            "call" => Some(call),
-            "put"  => Some(put),
-            _      => None,
-        };      
-    }
-
     let sqrt_t = t.sqrt();
     let d1 = ((s / k).ln() + (r + 0.5 * sigma * sigma) * t) / (sigma * sqrt_t);
     let d2 = d1 - sigma * sqrt_t;
